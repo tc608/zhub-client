@@ -1,0 +1,13 @@
+/target/
+.project
+.classpath
+/.settings/
+/bin/
+*.iml
+.idea/
+/out/
+/tmp/
+/lib/
+/libs/
+
+apidoc.*
