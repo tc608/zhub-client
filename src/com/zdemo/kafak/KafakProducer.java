@@ -15,7 +15,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Properties;
-import java.util.logging.Logger;
 
 /**
  * 生产
@@ -24,7 +23,6 @@ import java.util.logging.Logger;
  */
 @RestService
 public class KafakProducer<T extends Event> implements IProducer<T>, Service {
-    private final Logger logger = Logger.getLogger(this.getClass().getSimpleName());
     private KafkaProducer<String, String> producer;
 
     @Resource(name = "APP_HOME")

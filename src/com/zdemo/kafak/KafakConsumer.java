@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
 
 /**
  * 消费
@@ -27,8 +26,6 @@ import java.util.logging.Logger;
  */
 @RestService
 public abstract class KafakConsumer<T extends Event> implements IConsumer<T>, Service {
-
-    private final Logger logger = Logger.getLogger(this.getClass().getSimpleName());
 
     @Resource(name = "APP_HOME")
     protected File APP_HOME;

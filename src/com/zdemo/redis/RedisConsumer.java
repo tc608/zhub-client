@@ -60,8 +60,13 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
 
                     br.readLine(); //$n len(value)
                     String value = br.readLine(); // value
-                    T t = JsonConvert.root().convertFrom(getTypeToken().getType(), value);
-                    accept(t);
+                    try {
+                        T t = JsonConvert.root().convertFrom(getTypeToken().getType(), value);
+                        accept(t);
+                    } catch (Exception e) {
+                        logger.warning("event fmt error :" + value);
+                        e.printStackTrace();
+                    }
                 }
             }
         } catch (Exception e) {
