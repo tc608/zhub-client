@@ -3,7 +3,7 @@
 <application port="2001">
 
     <resources>
-
+        <properties load="redis.properties"></properties>
     </resources>
 
     <server protocol="HTTP" port="80">

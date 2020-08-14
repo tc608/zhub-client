@@ -1,18 +1,22 @@
 package com.zdemo.test;
 
-import com.zdemo.kafak.KafakConsumer;
-import com.zdemo.kafak.KafakProducer;
-import org.junit.Test;
+import com.zdemo.Event;
+import com.zdemo.redis.RedisConsumer;
+import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.TypeToken;
 
 import java.util.Collection;
 import java.util.List;
 
-public class MyConsumer extends KafakConsumer<Event<Integer>> {
+public class MyConsumer extends RedisConsumer<Event<Integer>> {
+
+    public String getGroupid() {
+        return "group-test"; //quest、user、im、live
+    }
 
     @Override
     public Collection<String> getSubscribes() {
-        return List.of("a");
+        return List.of("a", "b", "c");
     }
 
     @Override
@@ -23,32 +27,11 @@ public class MyConsumer extends KafakConsumer<Event<Integer>> {
 
     @Override
     public void accept(Event<Integer> event) {
-        System.out.println("我收到了消息 key：" + event.getKey() + " value:" + event.getValue());
-    }
-
-    @Test
-    public void run() {
-        MyConsumer consumer = new MyConsumer();
-        consumer.init(null);
-
-        try {
-            Thread.sleep(15_000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        switch (event.getTopic()) {
+            case "a" -> System.out.println("我收到了消息 主题A 事件：" + JsonConvert.root().convertTo(event));
+            case "b" -> System.out.println("我收到了消息 主题B 事件：" + JsonConvert.root().convertTo(event));
+            case "c" -> System.out.println("我收到了消息 主题C 事件：" + JsonConvert.root().convertTo(event));
         }
-    }
 
-    @Test
-    public void runProducer() {
-        KafakProducer<Event> producer = new KafakProducer();
-        producer.init(null);
-
-        Event<Integer> event = new Event<>();
-        event.setKey("XXX");
-        event.setValue(2314);
-
-        producer.send("a", event);
-
-        producer.destroy(null);
     }
 }

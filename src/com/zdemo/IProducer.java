@@ -2,13 +2,13 @@ package com.zdemo;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface IProducer<T> {
+public interface IProducer<T extends Event> {
 
 
-    default CompletableFuture sendAsync(String topic,T... t) {
-        return CompletableFuture.runAsync(() -> send(topic, t));
+    default CompletableFuture sendAsync(String topic, T... t) {
+        return CompletableFuture.runAsync(() -> send(t));
     }
 
-    void send(String topic,T... t);
+    void send(T... t);
 
 }

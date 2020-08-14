@@ -1,5 +1,6 @@
 package com.zdemo.kafak;
 
+import com.zdemo.Event;
 import com.zdemo.IProducer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -8,7 +9,13 @@ import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
 
+import javax.annotation.Resource;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.Properties;
+import java.util.logging.Logger;
 
 /**
  * 生产
@@ -16,29 +23,31 @@ import java.util.Properties;
  * @param <T>
  */
 @RestService
-public class KafakProducer<T> implements IProducer<T>, Service {
-
-    private String kafakServers = "122.112.180.156:6062";
+public class KafakProducer<T extends Event> implements IProducer<T>, Service {
+    private final Logger logger = Logger.getLogger(this.getClass().getSimpleName());
     private KafkaProducer<String, String> producer;
+
+    @Resource(name = "APP_HOME")
+    protected File APP_HOME;
 
     @Override
     public void init(AnyValue config) {
-        Properties props = new Properties();
-        props.put("bootstrap.servers", kafakServers);
-        props.put("acks", "all");
-        props.put("retries", 0);
-        props.put("batch.size", 16384);
-        props.put("linger.ms", 1);
-        props.put("buffer.memory", 33554432);
-        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        producer = new KafkaProducer(props);
+        try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
+            Properties props = new Properties();
+            props.load(fis);
+            producer = new KafkaProducer(props);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
-    public void send(String topic, T... t) {
-        for (T t1 : t) {
-            producer.send(new ProducerRecord(topic, JsonConvert.root().convertTo(t1)));
+    public void send(T... t) {
+        for (T x : t) {
+            logger.finest("send message: " + JsonConvert.root().convertTo(x));
+            producer.send(new ProducerRecord(x.getTopic(), JsonConvert.root().convertTo(x)));
         }
     }
 
