@@ -1,7 +1,5 @@
 package com.haogames.core.util;
 
-import com.jfinal.kit.Kv;
-import com.jfinal.template.Engine;
 import org.redkale.convert.json.JsonConvert;
 
 import java.io.*;
@@ -161,31 +159,5 @@ public final class FileKit {
         ) {
             return JsonConvert.root().convertFrom(typeToken, inputStream);
         }
-    }
-
-    /**
-     * 渲染模板到文件
-     *
-     * @param sourceStr
-     * @param target
-     * @param kv
-     */
-    public static void tplRender(String sourceStr, File target, Kv kv) {
-        String str = "";
-        if (sourceStr != null && !sourceStr.isEmpty()) {
-            str = Engine.use().getTemplateByString(sourceStr).renderToString(kv);
-        }
-        strToFile(str, target, true);
-    }
-
-    /**
-     * 通过模板创建内容
-     *
-     * @param tplFile
-     * @param para
-     */
-    public static void tplRender(File tplFile, File file, Map para) throws IOException {
-        String str = Engine.use().getTemplate(tplFile.getPath()).renderToString(para);
-        strToFile(str, file);
     }
 }
