@@ -1,9 +1,23 @@
 package com.zdemo;
 
+/**
+ * 发布订阅 事件
+ *
+ * @param <V>
+ */
 public class Event<V> {
     private String topic;
     private String key;
     private V value;
+
+    public Event() {
+    }
+
+    public Event(String topic, String key, V value) {
+        this.topic = topic;
+        this.key = key;
+        this.value = value;
+    }
 
     public String getTopic() {
         return topic;

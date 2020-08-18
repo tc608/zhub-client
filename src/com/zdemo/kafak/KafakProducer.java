@@ -30,7 +30,13 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
 
     @Override
     public void init(AnyValue config) {
-        try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
+        File file = new File(APP_HOME, "conf/kafak.properties");
+        if (!file.exists()) {
+            logger.warning(String.format("------\n%s (系统找不到指定的文件。)\n未初始化kafak 生产者，kafak发布消息不可用\n------", file.getPath()));
+            return;
+        }
+
+        try (FileInputStream fis = new FileInputStream(file)) {
             Properties props = new Properties();
             props.load(fis);
             producer = new KafkaProducer(props);
