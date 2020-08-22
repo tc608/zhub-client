@@ -5,7 +5,6 @@ import com.zdemo.IConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.redkale.convert.json.JsonConvert;
 import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
@@ -43,14 +42,13 @@ public abstract class KafakConsumer<T extends Event> implements IConsumer<T>, Se
                 consumer.subscribe(getSubscribes());
 
                 while (true) {
-
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
                     for (ConsumerRecord<String, String> record : records) {
+                        String value = record.value();
                         try {
-                            logger.finest(String.format("offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value()));
-                            T t = JsonConvert.root().convertFrom(getTypeToken().getType(), record.value());
-                            accept(t);
+                            accept(value);
                         } catch (Exception e) {
+                            logger.warning("event accept error :" + value);
                             e.printStackTrace();
                         }
                     }

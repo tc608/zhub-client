@@ -2,7 +2,6 @@ package com.zdemo.redis;
 
 import com.zdemo.Event;
 import com.zdemo.IConsumer;
-import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
 
@@ -61,10 +60,9 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
                     br.readLine(); //$n len(value)
                     String value = br.readLine(); // value
                     try {
-                        T t = JsonConvert.root().convertFrom(getTypeToken().getType(), value);
-                        accept(t);
+                        accept(value);
                     } catch (Exception e) {
-                        logger.warning("event fmt error :" + value);
+                        logger.warning("event accept error :" + value);
                         e.printStackTrace();
                     }
                 }

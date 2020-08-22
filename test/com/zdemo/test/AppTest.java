@@ -5,6 +5,8 @@ import com.zdemo.redis.RedisProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
 
+import java.util.Map;
+
 /**
  * 消息发布订阅测试
  */
@@ -31,10 +33,10 @@ public class AppTest {
         try {
             RedisProducer producer = Application.singleton(RedisProducer.class);
 
-            Event<Integer> event = new Event<>();
+            Event<Map> event = new Event<>();
             event.setTopic("c");
             event.setKey("abx");
-            event.setValue(2314);
+            event.setValue(Map.of("A", "a"));
 
             producer.send(event);
 

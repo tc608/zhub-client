@@ -1,5 +1,6 @@
 package com.zdemo;
 
+import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.TypeToken;
 
 import java.util.Collection;
@@ -13,4 +14,18 @@ public interface IConsumer<T extends Event> {
     TypeToken<T> getTypeToken();
 
     void accept(T t);
+
+    default void accept(String value) {
+        System.out.println(value);
+        if ("com.zdemo.Event<java.lang.String>".equals(getTypeToken().getType().toString())) {
+            String _value = value.split("\"value\":")[1];
+            _value = _value.substring(0, _value.length() - 1);
+            Event t = JsonConvert.root().convertFrom(getTypeToken().getType(), value.replace(_value, "’‘"));
+            t.setValue(_value);
+            accept((T) t);
+        } else {
+            Event t = JsonConvert.root().convertFrom(getTypeToken().getType(), value);
+            accept((T) t);
+        }
+    }
 }

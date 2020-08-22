@@ -8,7 +8,7 @@ import org.redkale.util.TypeToken;
 import java.util.Collection;
 import java.util.List;
 
-public class MyConsumer extends RedisConsumer<Event<Integer>> {
+public class MyConsumer extends RedisConsumer<Event<String>> {
 
     public String getGroupid() {
         return "group-test"; //quest、user、im、live
@@ -20,13 +20,13 @@ public class MyConsumer extends RedisConsumer<Event<Integer>> {
     }
 
     @Override
-    public TypeToken<Event<Integer>> getTypeToken() {
-        return new TypeToken<Event<Integer>>() {
+    public TypeToken<Event<String>> getTypeToken() {
+        return new TypeToken<Event<String>>() {
         };
     }
 
     @Override
-    public void accept(Event<Integer> event) {
+    public void accept(Event<String> event) {
         switch (event.getTopic()) {
             case "a" -> System.out.println("我收到了消息 主题A 事件：" + JsonConvert.root().convertTo(event));
             case "b" -> System.out.println("我收到了消息 主题B 事件：" + JsonConvert.root().convertTo(event));
