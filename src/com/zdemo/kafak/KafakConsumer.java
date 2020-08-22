@@ -16,7 +16,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * 消费
@@ -33,7 +32,7 @@ public abstract class KafakConsumer<T extends Event> implements IConsumer<T>, Se
 
     @Override
     public void init(AnyValue config) {
-        CompletableFuture.runAsync(() -> {
+        new Thread(() -> {
             try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
                 Properties props = new Properties();
                 props.load(fis);
@@ -59,6 +58,6 @@ public abstract class KafakConsumer<T extends Event> implements IConsumer<T>, Se
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        });
+        }).start();
     }
 }

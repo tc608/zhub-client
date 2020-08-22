@@ -11,7 +11,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.concurrent.CompletableFuture;
 
 public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Service {
 
@@ -28,7 +27,7 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
 
     @Override
     public void init(AnyValue config) {
-        CompletableFuture.runAsync(() -> {
+        new Thread(() -> {
             try {
                 Socket client = new Socket();
                 client.connect(new InetSocketAddress(host, port));
@@ -72,6 +71,6 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        }).start();
     }
 }

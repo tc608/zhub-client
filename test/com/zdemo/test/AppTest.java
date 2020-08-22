@@ -5,8 +5,6 @@ import com.zdemo.redis.RedisProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
 
-import java.util.Map;
-
 /**
  * 消息发布订阅测试
  */

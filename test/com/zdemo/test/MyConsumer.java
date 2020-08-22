@@ -1,14 +1,14 @@
 package com.zdemo.test;
 
 import com.zdemo.Event;
-import com.zdemo.redis.RedisConsumer;
+import com.zdemo.kafak.KafakConsumer;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.TypeToken;
 
 import java.util.Collection;
 import java.util.List;
 
-public class MyConsumer extends RedisConsumer<Event<String>> {
+public class MyConsumer extends KafakConsumer<Event<String>> {
 
     public String getGroupid() {
         return "group-test"; //quest、user、im、live
@@ -16,7 +16,7 @@ public class MyConsumer extends RedisConsumer<Event<String>> {
 
     @Override
     public Collection<String> getSubscribes() {
-        return List.of("a", "b", "c");
+        return List.of("a", "b", "c", "vis-log");
     }
 
     @Override
