@@ -33,10 +33,10 @@ public class AppTest {
         try {
             RedisProducer producer = Application.singleton(RedisProducer.class);
 
-            Event<Map> event = new Event<>();
+            Event event = new Event<>();
             event.setTopic("c");
             event.setKey("abx");
-            event.setValue(Map.of("A", "a"));
+            event.setValue(1f);
 
             producer.send(event);
 

@@ -21,6 +21,9 @@ public interface IConsumer<T extends Event> {
             String _value = value.split("\"value\":")[1];
             _value = _value.substring(0, _value.length() - 1);
             Event t = JsonConvert.root().convertFrom(getTypeToken().getType(), value.replace(_value, "’‘"));
+            if (_value.startsWith("\"") && _value.endsWith("\"")) {
+                _value = _value.substring(1, _value.length() -1);
+            }
             t.setValue(_value);
             accept((T) t);
         } else {

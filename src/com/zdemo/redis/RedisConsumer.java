@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.concurrent.CompletableFuture;
 
 public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Service {
 
@@ -27,48 +28,50 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
 
     @Override
     public void init(AnyValue config) {
-        try {
-            Socket client = new Socket();
-            client.connect(new InetSocketAddress(host, port));
-            client.setKeepAlive(true);
+        CompletableFuture.runAsync(() -> {
+            try {
+                Socket client = new Socket();
+                client.connect(new InetSocketAddress(host, port));
+                client.setKeepAlive(true);
 
-            OutputStreamWriter oswSub = new OutputStreamWriter(client.getOutputStream());
-            oswSub.write("AUTH " + password + "\r\n");
-            oswSub.flush();
+                OutputStreamWriter oswSub = new OutputStreamWriter(client.getOutputStream());
+                oswSub.write("AUTH " + password + "\r\n");
+                oswSub.flush();
 
-            StringBuffer buf = new StringBuffer("SUBSCRIBE");
-            for (String topic : getSubscribes()) {
-                buf.append(" ").append(topic);
-            }
-            buf.append(" _ping\r\n");
-            oswSub.write(buf.toString());
-            oswSub.flush();
+                StringBuffer buf = new StringBuffer("SUBSCRIBE");
+                for (String topic : getSubscribes()) {
+                    buf.append(" ").append(topic);
+                }
+                buf.append(" _ping\r\n");
+                oswSub.write(buf.toString());
+                oswSub.flush();
 
-            BufferedReader br = new BufferedReader(new InputStreamReader(client.getInputStream()));
-            String type = "";
-            String readLine;
-            while ((readLine = br.readLine()) != null) {
-                if ("*3".equals(readLine)) {
-                    br.readLine(); // $7 len()
-                    type = br.readLine(); // message
-                    if (!"message".equals(type)) {
-                        continue;
-                    }
-                    br.readLine(); //$n len(key)
-                    String topic = br.readLine(); // topic
+                BufferedReader br = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                String type = "";
+                String readLine;
+                while ((readLine = br.readLine()) != null) {
+                    if ("*3".equals(readLine)) {
+                        br.readLine(); // $7 len()
+                        type = br.readLine(); // message
+                        if (!"message".equals(type)) {
+                            continue;
+                        }
+                        br.readLine(); //$n len(key)
+                        String topic = br.readLine(); // topic
 
-                    br.readLine(); //$n len(value)
-                    String value = br.readLine(); // value
-                    try {
-                        accept(value);
-                    } catch (Exception e) {
-                        logger.warning("event accept error :" + value);
-                        e.printStackTrace();
+                        br.readLine(); //$n len(value)
+                        String value = br.readLine(); // value
+                        try {
+                            accept(value);
+                        } catch (Exception e) {
+                            logger.warning("event accept error :" + value);
+                            e.printStackTrace();
+                        }
                     }
                 }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        });
     }
 }
