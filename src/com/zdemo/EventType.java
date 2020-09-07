@@ -9,6 +9,9 @@ public class EventType<T> {
     public final TypeToken<T> typeToken;
     private final Consumer<T> consumer;
 
+    private final static TypeToken<String> stringToken = new TypeToken<>() {
+    };
+
     private EventType(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
         this.topic = topic;
         this.typeToken = typeToken;
@@ -17,6 +20,10 @@ public class EventType<T> {
 
     public static <T> EventType of(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
         return new EventType<>(topic, typeToken, consumer);
+    }
+
+    public static EventType of(String topic, Consumer<String> consumer) {
+        return new EventType(topic, stringToken, consumer);
     }
 
     public void accept(T t) {

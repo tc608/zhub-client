@@ -15,7 +15,11 @@ public class MyConsumer extends KafakConsumer {
         addEventType(
                 EventType.of("a1", new TypeToken<Float>() {
                 }, r -> {
-                    System.out.println("我收到了消息 主题A 事件：" + JsonConvert.root().convertTo(r));
+                    System.out.println("我收到了消息 主题a1 事件：" + JsonConvert.root().convertTo(r));
+                }),
+
+                EventType.of("bx", str -> {
+                    System.out.println("我收到了消息 主题bx 事件：" + str);
                 })
         );
     }
