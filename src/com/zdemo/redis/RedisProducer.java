@@ -42,7 +42,7 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
     public void send(T... t) {
         for (T x : t) {
             try {
-                oswPub.write("PUBLISH " + x.getTopic() + " '" + JsonConvert.root().convertTo(x) + "' \r\n");
+                oswPub.write("PUBLISH " + x.topic + " '" + JsonConvert.root().convertTo(x.value) + "' \r\n");
                 oswPub.flush();
             } catch (IOException e) {
                 e.printStackTrace();

@@ -1,6 +1,6 @@
 package com.zdemo.redis;
 
-import com.zdemo.Event;
+import com.zdemo.AbstractConsumer;
 import com.zdemo.IConsumer;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
@@ -12,7 +12,7 @@ import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
-public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Service {
+public abstract class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
 
     @Resource(name = "property.redis.host")
     private String host = "127.0.0.1";
@@ -20,10 +20,6 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
     private String password = "";
     @Resource(name = "property.redis.port")
     private int port = 6379;
-
-    public String getGroupid() {
-        return "";
-    }
 
     @Override
     public void init(AnyValue config) {
@@ -61,9 +57,9 @@ public abstract class RedisConsumer<T extends Event> implements IConsumer<T>, Se
                         br.readLine(); //$n len(value)
                         String value = br.readLine(); // value
                         try {
-                            accept(value);
+                            accept(topic, value);
                         } catch (Exception e) {
-                            logger.warning("event accept error :" + value);
+                            logger.warning("topic[" + topic + "] event accept error :" + value);
                             e.printStackTrace();
                         }
                     }

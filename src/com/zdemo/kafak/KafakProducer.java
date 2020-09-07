@@ -50,7 +50,7 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
     @Override
     public void send(T... t) {
         for (T x : t) {
-            producer.send(new ProducerRecord(x.getTopic(), JsonConvert.root().convertTo(x)));
+            producer.send(new ProducerRecord(x.topic, JsonConvert.root().convertTo(x.value)));
         }
     }
 
