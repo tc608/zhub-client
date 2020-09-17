@@ -16,7 +16,13 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public void addEventType(EventType... eventType) {
         for (EventType type : eventType) {
-            eventMap.put(type.topic, type);
+            String[] topics = type.topic.split(",");
+            for (String topic : topics) {
+                if (topic.isEmpty()) {
+                    continue;
+                }
+                eventMap.put(topic, type);
+            }
         }
     }
 
@@ -30,7 +36,7 @@ public abstract class AbstractConsumer implements IConsumer {
         EventType eventType = eventMap.get(topic);
 
         Object data = null;
-        if ("java.lang.String".equals(eventType.typeToken.getType().toString())) {
+        if ("java.lang.String".equals(eventType.typeToken.getType().getTypeName())) {
             data = value;
         } else {
             data = JsonConvert.root().convertFrom(eventType.typeToken.getType(), value);
