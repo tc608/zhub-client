@@ -14,6 +14,9 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public final Map<String, EventType> eventMap = new HashMap<>();
 
+    public void preInit() {
+    }
+
     public void addEventType(EventType... eventType) {
         for (EventType type : eventType) {
             String[] topics = type.topic.split(",");

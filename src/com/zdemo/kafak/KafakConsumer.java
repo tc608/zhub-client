@@ -53,7 +53,8 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
     }
 
     @Override
-    public void init(AnyValue config) {
+    public final void init(AnyValue config) {
+        preInit();
         try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
             props = new Properties();
             props.load(fis);

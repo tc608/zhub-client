@@ -11,7 +11,8 @@ public class MyConsumer extends KafakConsumer {
         return "group-test"; //消费组名称
     }
 
-    {
+    @Override
+    public void preInit() {
         addEventType(
                 EventType.of("a1", new TypeToken<Float>() {
                 }, r -> {
