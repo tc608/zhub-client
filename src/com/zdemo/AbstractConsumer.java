@@ -14,7 +14,8 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public final Map<String, EventType> eventMap = new HashMap<>();
 
-    public void preInit() {
+    public boolean preInit() {
+        return true;
     }
 
     public void addEventType(EventType... eventType) {

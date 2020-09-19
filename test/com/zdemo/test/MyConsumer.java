@@ -12,7 +12,7 @@ public class MyConsumer extends KafakConsumer {
     }
 
     @Override
-    public void preInit() {
+    public boolean preInit() {
         addEventType(
                 EventType.of("a1", new TypeToken<Float>() {
                 }, r -> {
@@ -23,5 +23,7 @@ public class MyConsumer extends KafakConsumer {
                     System.out.println("我收到了消息 主题bx 事件：" + str);
                 })
         );
+
+        return true;
     }
 }

@@ -6,7 +6,7 @@ import java.util.Collection;
 import java.util.logging.Logger;
 
 public interface IConsumer<T extends Event> {
-    TypeToken TYPE_TOKEN_STRING = new TypeToken<String>() {
+    TypeToken<String> TYPE_TOKEN_STRING = new TypeToken<String>() {
     };
     TypeToken<Integer> TYPE_TOKEN_INT = new TypeToken<Integer>() {
     };
