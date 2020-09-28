@@ -13,7 +13,6 @@ import org.redkale.util.AnyValue;
 import javax.annotation.Resource;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
@@ -48,7 +47,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                 queue.put(eventType);
             }
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.log(Level.WARNING, "", e);
         }
     }
 
@@ -69,7 +68,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                     KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
                     consumer.subscribe(asList("_"));
                     while (true) {
-                        ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(10_000));
+                        ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1_000));
                         records.forEach(record -> {
                             String topic = record.topic();
                             long offset = record.offset();
@@ -77,8 +76,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                             try {
                                 accept(topic, value);
                             } catch (Exception e) {
-                                logger.warning(String.format("topic[%s] event accept error, offset=%s,value:%s", topic, offset, value));
-                                e.printStackTrace();
+                                logger.log(Level.WARNING, String.format("topic[%s] event accept error, offset=%s,value:%s", topic, offset, value), e);
                             }
                         });
 
@@ -94,10 +92,8 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                 }
 
             }, "thread-consumer-[" + getGroupid() + "]").start();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.log(Level.WARNING, "", e);
         }
     }
 

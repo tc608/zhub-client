@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.logging.Level;
 
 public abstract class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
 
@@ -59,13 +60,12 @@ public abstract class RedisConsumer extends AbstractConsumer implements IConsume
                         try {
                             accept(topic, value);
                         } catch (Exception e) {
-                            logger.warning("topic[" + topic + "] event accept error :" + value);
-                            e.printStackTrace();
+                            logger.log(Level.WARNING, "topic[" + topic + "] event accept error :" + value, e);
                         }
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.log(Level.WARNING, "Redis Consumer 初始化失败！", e);
             }
         }).start();
     }

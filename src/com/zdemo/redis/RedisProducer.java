@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.logging.Level;
 
 public class RedisProducer<T extends Event> implements IProducer<T>, Service {
 
@@ -34,7 +35,7 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
             oswPub.write("AUTH " + password + "\r\n");
             oswPub.flush();
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.log(Level.WARNING, "", e);
         }
     }
 
@@ -45,7 +46,7 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
                 oswPub.write("PUBLISH " + x.topic + " '" + JsonConvert.root().convertTo(x.value) + "' \r\n");
                 oswPub.flush();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.log(Level.WARNING, "", e);
             }
         }
     }

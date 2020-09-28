@@ -22,32 +22,8 @@ public class AppTest {
     public void runConsumer() {
         try {
             //启动并开启消费监听
-            MyConsumer consumer = Application.singleton(MyConsumer.class);
-
-            //新增订阅主题 a1
-            consumer.addEventType(EventType.of("a1", new TypeToken<Float>() {
-            }, r -> {
-                System.out.println("我收到了消息 主题A 事件：" + JsonConvert.root().convertTo(r));
-            }));
-
-            Thread.sleep(5_000);
-
-            //新增订阅主题 b1、c1
-            consumer.addEventType(
-                    // 订阅主题 b1
-                    EventType.of("b1", new TypeToken<Map<String, String>>() {
-                    }, r -> {
-                        System.out.println("我收到了消息 主题B 事件：" + JsonConvert.root().convertTo(r));
-                    }),
-
-                    // 订阅主题 c1
-                    EventType.of("c1", new TypeToken<List<Integer>>() {
-                    }, r -> {
-                        System.out.println("我收到了消息 主题C 事件：" + JsonConvert.root().convertTo(r));
-                    })
-            );
-
-            Thread.sleep(60_000);
+            Application.singleton(MyConsumer.class);
+            Thread.sleep(60_000 * 60);
         } catch (Exception e) {
             e.printStackTrace();
         }

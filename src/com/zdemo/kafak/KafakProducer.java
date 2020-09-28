@@ -12,9 +12,9 @@ import org.redkale.util.AnyValue;
 import javax.annotation.Resource;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Properties;
+import java.util.logging.Level;
 
 /**
  * 生产
@@ -31,26 +31,23 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
     @Override
     public void init(AnyValue config) {
         File file = new File(APP_HOME, "conf/kafak.properties");
-        if (!file.exists()) {
-            logger.warning(String.format("------\n%s (系统找不到指定的文件。)\n未初始化kafak 生产者，kafak发布消息不可用\n------", file.getPath()));
-            return;
-        }
-
         try (FileInputStream fis = new FileInputStream(file)) {
             Properties props = new Properties();
             props.load(fis);
             producer = new KafkaProducer(props);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.log(Level.WARNING, "未初始化kafak 生产者，kafak发布消息不可用", e);
         }
     }
 
     @Override
     public void send(T... t) {
         for (T x : t) {
-            producer.send(new ProducerRecord(x.topic, JsonConvert.root().convertTo(x.value)));
+            String v = JsonConvert.root().convertTo(x.value);
+            if (v.startsWith("\"") && v.endsWith("\"")) {
+                v = v.substring(1, v.length() - 1);
+            }
+            producer.send(new ProducerRecord(x.topic, v));
         }
     }
 
