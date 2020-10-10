@@ -22,7 +22,7 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
     @Resource(name = "property.redis.port")
     private int port = 6379;
 
-    private OutputStreamWriter oswPub;
+    private OutputStreamWriter osw;
 
     @Override
     public void init(AnyValue config) {
@@ -31,23 +31,22 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
             client.connect(new InetSocketAddress(host, port));
             client.setKeepAlive(true);
 
-            oswPub = new OutputStreamWriter(client.getOutputStream());
-            oswPub.write("AUTH " + password + "\r\n");
-            oswPub.flush();
+            osw = new OutputStreamWriter(client.getOutputStream());
+            osw.write("AUTH " + password + "\r\n");
+            osw.flush();
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
         }
     }
 
     @Override
-    public void send(T... t) {
-        for (T x : t) {
-            try {
-                oswPub.write("PUBLISH " + x.topic + " '" + JsonConvert.root().convertTo(x.value) + "' \r\n");
-                oswPub.flush();
-            } catch (IOException e) {
-                logger.log(Level.WARNING, "", e);
-            }
+    public void send(T t) {
+        try {
+            osw.write("PUBLISH " + t.topic + " '" + JsonConvert.root().convertTo(t.value) + "' \r\n");
+            osw.flush();
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "", e);
+
         }
     }
 }

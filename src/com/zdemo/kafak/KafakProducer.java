@@ -41,14 +41,12 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
     }
 
     @Override
-    public void send(T... t) {
-        for (T x : t) {
-            String v = JsonConvert.root().convertTo(x.value);
-            if (v.startsWith("\"") && v.endsWith("\"")) {
-                v = v.substring(1, v.length() - 1);
-            }
-            producer.send(new ProducerRecord(x.topic, v));
+    public void send(T t) {
+        String v = JsonConvert.root().convertTo(t.value);
+        if (v.startsWith("\"") && v.endsWith("\"")) {
+            v = v.substring(1, v.length() - 1);
         }
+        producer.send(new ProducerRecord(t.topic, v));
     }
 
     @Override

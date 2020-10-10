@@ -22,7 +22,23 @@ public class AppTest {
     public void runConsumer() {
         try {
             //启动并开启消费监听
-            Application.singleton(MyConsumer.class);
+            MyConsumer consumer = Application.singleton(MyConsumer.class);
+
+            consumer.addEventType(
+                    EventType.of("a1", new TypeToken<Float>() {
+                    }, r -> {
+                        System.out.println("我收到了消息 主题a1 事件：" + JsonConvert.root().convertTo(r));
+                    }),
+
+                    EventType.of("bx", str -> {
+                        System.out.println("我收到了消息 主题bx 事件：" + str);
+                    })
+
+                    , EventType.of("game-update", str -> {
+                        System.out.println("我收到了消息 主题game-update 事件：" + str);
+                    })
+            );
+
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {
             e.printStackTrace();
@@ -39,13 +55,14 @@ public class AppTest {
             Map v1 = Map.of("k", "v");
             List v2 = asList(1, 2, 3);
 
-            producer.send(Event.of("a1", v0));
-            producer.send(Event.of("b1", v1));
-            producer.send(Event.of("c1", v2));
+            //producer.send(Event.of("a1", v0));
+            /*producer.send(Event.of("b1", v1));
+            producer.send(Event.of("c1", v2));*/
 
+            producer.send(Event.of("game-update", 23256));
 
             try {
-                Thread.sleep(1_000);
+                Thread.sleep(10_000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
