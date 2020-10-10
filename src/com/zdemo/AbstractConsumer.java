@@ -14,6 +14,8 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public final Map<String, EventType> eventMap = new HashMap<>();
 
+    public abstract String getGroupid();
+
     public boolean preInit() {
         return true;
     }
