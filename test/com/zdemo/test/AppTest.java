@@ -2,7 +2,8 @@ package com.zdemo.test;
 
 import com.zdemo.Event;
 import com.zdemo.EventType;
-import com.zdemo.kafak.KafakProducer;
+import com.zdemo.IProducer;
+import com.zdemo.pulsar.PulsarProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
 import org.redkale.convert.json.JsonConvert;
@@ -28,16 +29,30 @@ public class AppTest {
                     EventType.of("a1", new TypeToken<Float>() {
                     }, r -> {
                         System.out.println("我收到了消息 主题a1 事件：" + JsonConvert.root().convertTo(r));
-                    }),
-
-                    EventType.of("bx", str -> {
-                        System.out.println("我收到了消息 主题bx 事件：" + str);
                     })
 
                     , EventType.of("game-update", str -> {
                         System.out.println("我收到了消息 主题game-update 事件：" + str);
                     })
+
+                    , EventType.of("http.req.hello", str -> {
+                        System.out.println("我收到了消息 主题http.req.hello 事件：" + str);
+                    })
+
+                    , EventType.of("http.resp.node2004", str -> {
+                        System.out.println("我收到了消息 主题http.resp.node2004 事件：" + str);
+                    })
             );
+
+            // 10s 后加入 bx主题
+            Thread.sleep(1_000 * 10);
+            System.out.println("加入新的主题订阅");
+            consumer.addEventType(
+                    EventType.of("bx", str -> {
+                        System.out.println("我收到了消息 主题bx 事件：" + str);
+                    })
+            );
+
 
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {
@@ -48,7 +63,7 @@ public class AppTest {
     @Test
     public void runProducer() {
         try {
-            KafakProducer producer = Application.singleton(KafakProducer.class);
+            IProducer producer = Application.singleton(PulsarProducer.class);
 
             // 发送不同的 事件
             float v0 = 1f;
@@ -60,12 +75,13 @@ public class AppTest {
             producer.send(Event.of("c1", v2));*/
 
             producer.send(Event.of("game-update", 23256));
+            producer.send(Event.of("bx", 23256));
 
-            try {
-                Thread.sleep(10_000);
+            /*try {
+                Thread.sleep(1_000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
-            }
+            }*/
         } catch (Exception e) {
             e.printStackTrace();
         }
