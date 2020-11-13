@@ -19,8 +19,6 @@ import java.util.Properties;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
 
-import static java.util.Arrays.asList;
-
 /**
  * 消费
  */
@@ -66,7 +64,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                 try {
                     props.put("group.id", getGroupid());
                     KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
-                    consumer.subscribe(asList("_"));
+                    consumer.subscribe(getTopics());
                     while (true) {
                         ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1_000));
                         records.forEach(record -> {
@@ -84,7 +82,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                         while (!queue.isEmpty()) {
                             queue.clear();
                             consumer.unsubscribe();
-                            consumer.subscribe(getSubscribes());
+                            consumer.subscribe(getTopics());
                         }
                     }
                 } catch (WakeupException ex) {

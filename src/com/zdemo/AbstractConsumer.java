@@ -2,9 +2,7 @@ package com.zdemo;
 
 import org.redkale.convert.json.JsonConvert;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author Liang
@@ -33,8 +31,12 @@ public abstract class AbstractConsumer implements IConsumer {
     }
 
     @Override
-    public final Set<String> getSubscribes() {
-        return eventMap.keySet();
+    public final Set<String> getTopics() {
+        Set<String> keySet = eventMap.keySet();
+        if (keySet.isEmpty()) {
+            keySet.add("-");
+        }
+        return keySet;
     }
 
     @Override

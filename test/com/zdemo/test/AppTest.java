@@ -2,6 +2,7 @@ package com.zdemo.test;
 
 import com.zdemo.Event;
 import com.zdemo.EventType;
+import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
 import com.zdemo.pulsar.PulsarProducer;
 import org.junit.Test;
@@ -23,7 +24,7 @@ public class AppTest {
     public void runConsumer() {
         try {
             //启动并开启消费监听
-            MyConsumer consumer = Application.singleton(MyConsumer.class);
+            IConsumer consumer = Application.singleton(MyConsumer.class);
 
             consumer.addEventType(
                     EventType.of("a1", new TypeToken<Float>() {

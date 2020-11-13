@@ -13,7 +13,9 @@ public interface IConsumer<T extends Event> {
 
     Logger logger = Logger.getLogger(IConsumer.class.getSimpleName());
 
-    Collection<String> getSubscribes();
+    Collection<String> getTopics();
 
-    <T> void accept(String topic, String record);
+    void addEventType(EventType... eventType);
+
+    void accept(String topic, String record);
 }
