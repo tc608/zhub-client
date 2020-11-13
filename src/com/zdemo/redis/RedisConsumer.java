@@ -40,10 +40,10 @@ public abstract class RedisConsumer extends AbstractConsumer implements IConsume
             writer.flush();
 
             StringBuffer buf = new StringBuffer("SUBSCRIBE");
-            for (String topic : getSubscribes()) {
+            for (String topic : getTopics()) {
                 buf.append(" ").append(topic);
             }
-            buf.append(" _\r\n");
+            buf.append("\r\n");
             writer.write(buf.toString());
             writer.flush();
 

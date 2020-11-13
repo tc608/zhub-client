@@ -38,6 +38,9 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
 
     @Override
     public void init(AnyValue config) {
+        if (!preInit()) {
+            return;
+        }
         new Thread(() -> {
             try {
                 client = PulsarClient.builder()
@@ -45,7 +48,7 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
                         .build();
 
                 consumer = client.newConsumer()
-                        .topics(new ArrayList<>(getSubscribes()))
+                        .topics(new ArrayList<>(getTopics()))
                         .subscriptionName(getGroupid())
                         .subscriptionType(SubscriptionType.Shared)
                         .subscribe();
@@ -56,7 +59,7 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
                         queue.clear();
                         consumer.unsubscribe();
                         consumer = client.newConsumer()
-                                .topics(new ArrayList<>(getSubscribes()))
+                                .topics(new ArrayList<>(getTopics()))
                                 .subscriptionName(getGroupid())
                                 .subscriptionType(SubscriptionType.Shared)
                                 .subscribe();
