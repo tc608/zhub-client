@@ -1,8 +1,8 @@
 package com.zdemo.test;
 
-import com.zdemo.pulsar.PulsarConsumer;
+import com.zdemo.kafak.KafakConsumer;
 
-public class MyConsumer extends PulsarConsumer {
+public class MyConsumer extends KafakConsumer {
 
     public String getGroupid() {
         return "group-test"; //消费组名称

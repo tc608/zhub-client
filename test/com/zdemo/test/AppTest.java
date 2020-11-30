@@ -4,11 +4,9 @@ import com.zdemo.Event;
 import com.zdemo.EventType;
 import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
-import com.zdemo.pulsar.PulsarProducer;
+import com.zdemo.kafak.KafakProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
-import org.redkale.convert.json.JsonConvert;
-import org.redkale.util.TypeToken;
 
 import java.util.List;
 import java.util.Map;
@@ -27,29 +25,11 @@ public class AppTest {
             IConsumer consumer = Application.singleton(MyConsumer.class);
 
             consumer.addEventType(
-                    EventType.of("a1", new TypeToken<Float>() {
-                    }, r -> {
-                        System.out.println("我收到了消息 主题a1 事件：" + JsonConvert.root().convertTo(r));
+                    EventType.of("a", str -> {
+                        System.out.println("我收到了消息 a 事件：" + str);
                     })
 
-                    , EventType.of("game-update", str -> {
-                        System.out.println("我收到了消息 主题game-update 事件：" + str);
-                    })
-
-                    , EventType.of("http.req.hello", str -> {
-                        System.out.println("我收到了消息 主题http.req.hello 事件：" + str);
-                    })
-
-                    , EventType.of("http.resp.node2004", str -> {
-                        System.out.println("我收到了消息 主题http.resp.node2004 事件：" + str);
-                    })
-            );
-
-            // 10s 后加入 bx主题
-            Thread.sleep(1_000 * 10);
-            System.out.println("加入新的主题订阅");
-            consumer.addEventType(
-                    EventType.of("bx", str -> {
+                    , EventType.of("bx", str -> {
                         System.out.println("我收到了消息 主题bx 事件：" + str);
                     })
             );
@@ -64,7 +44,7 @@ public class AppTest {
     @Test
     public void runProducer() {
         try {
-            IProducer producer = Application.singleton(PulsarProducer.class);
+            IProducer producer = Application.singleton(KafakProducer.class);
 
             // 发送不同的 事件
             float v0 = 1f;
@@ -75,14 +55,17 @@ public class AppTest {
             /*producer.send(Event.of("b1", v1));
             producer.send(Event.of("c1", v2));*/
 
-            producer.send(Event.of("game-update", 23256));
-            producer.send(Event.of("bx", 23256));
+            /*producer.send(Event.of("game-update", 23256));
+            producer.send(Event.of("bx", 23256));*/
+            for (int i = 0; i < 5; i++) {
+                producer.send(Event.of("a", i + ""));
+            }
 
-            /*try {
+            try {
                 Thread.sleep(1_000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
-            }*/
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }

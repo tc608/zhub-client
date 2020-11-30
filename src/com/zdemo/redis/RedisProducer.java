@@ -42,7 +42,11 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
     @Override
     public void send(T t) {
         try {
-            osw.write("PUBLISH " + t.topic + " '" + JsonConvert.root().convertTo(t.value) + "' \r\n");
+            String v = JsonConvert.root().convertTo(t.value);
+            if (v.startsWith("\"") && v.endsWith("\"")) {
+                v = v.substring(1, v.length() - 1);
+            }
+            osw.write("PUBLISH " + t.topic + " '" + v + "' \r\n");
             osw.flush();
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
