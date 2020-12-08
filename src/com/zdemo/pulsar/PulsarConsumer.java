@@ -22,18 +22,14 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
 
     public abstract String getGroupid();
 
-    private final LinkedBlockingQueue<EventType> queue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
 
     @Override
     public void addEventType(EventType... eventTypes) {
         super.addEventType(eventTypes);
-        try {
-            for (EventType eventType : eventTypes) {
-                queue.put(eventType);
-            }
-        } catch (InterruptedException e) {
-            logger.log(Level.WARNING, "", e);
-        }
+
+        // 增加变更标记
+        queue.add(() -> logger.info("PulsarConsumer add new topic!"));
     }
 
     @Override
@@ -41,22 +37,21 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
         if (!preInit()) {
             return;
         }
+        queue.add(() -> logger.info("PulsarConsumer starting ..."));
         new Thread(() -> {
             try {
                 client = PulsarClient.builder()
                         .serviceUrl(serviceurl)
                         .build();
 
-                consumer = client.newConsumer()
-                        .topics(new ArrayList<>(getTopics()))
-                        .subscriptionName(getGroupid())
-                        .subscriptionType(SubscriptionType.Shared)
-                        .subscribe();
-
                 while (true) {
                     // 动态新增订阅
-                    while (!queue.isEmpty()) {
-                        queue.clear();
+                    if (!queue.isEmpty()) {
+                        Runnable runnable;
+                        while ((runnable = queue.poll()) != null) {
+                            runnable.run();
+                        }
+
                         consumer.unsubscribe();
                         consumer = client.newConsumer()
                                 .topics(new ArrayList<>(getTopics()))
@@ -90,7 +85,7 @@ public abstract class PulsarConsumer extends AbstractConsumer implements IConsum
     }
 
     @Override
-    public void destroy(AnyValue config) {
+    public void unsubscribe(String topic) {
 
     }
 }

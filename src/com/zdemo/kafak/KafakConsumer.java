@@ -35,18 +35,14 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
 
     public abstract String getGroupid();
 
-    private final LinkedBlockingQueue<EventType> queue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
 
     @Override
     public void addEventType(EventType... eventTypes) {
         super.addEventType(eventTypes);
-        try {
-            for (EventType eventType : eventTypes) {
-                queue.put(eventType);
-            }
-        } catch (InterruptedException e) {
-            logger.log(Level.WARNING, "", e);
-        }
+
+        // 增加变更标记
+        queue.add(() -> logger.info("KafakConsumer starting..."));
     }
 
     @Override
@@ -57,8 +53,6 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
         try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
             props = new Properties();
             props.load(fis);
-
-            if (logger.isLoggable(Level.INFO)) logger.info(getGroupid() + " consumer started!");
 
             new Thread(() -> {
                 try {
@@ -78,9 +72,12 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
                             }
                         });
 
-                        // 动态新增订阅
-                        while (!queue.isEmpty()) {
-                            queue.clear();
+                        if (!queue.isEmpty()) {
+                            Runnable runnable;
+                            while ((runnable = queue.poll()) != null) {
+                                runnable.run();
+                            }
+
                             consumer.unsubscribe();
                             consumer.subscribe(getTopics());
                         }
@@ -95,5 +92,8 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
         }
     }
 
-
+    @Override
+    public void unsubscribe(String topic) {
+        queue.add(() -> eventMap.remove(topic)); // 加入延时执行队列（下一次订阅变更检查周期执行）
+    }
 }
