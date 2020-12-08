@@ -18,4 +18,10 @@ public interface IConsumer<T extends Event> {
     void addEventType(EventType... eventType);
 
     void accept(String topic, String record);
+
+    /**
+     * 取消订阅
+     * @param topic
+     */
+    void unsubscribe(String topic);
 }

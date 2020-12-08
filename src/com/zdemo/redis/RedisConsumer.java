@@ -101,4 +101,14 @@ public abstract class RedisConsumer extends AbstractConsumer implements IConsume
             }
         }
     }
+
+    @Override
+    public void unsubscribe(String topic) {
+        try {
+            writer.write("UNSUBSCRIBE " + topic + "\r\n");
+            writer.flush();
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "", e);
+        }
+    }
 }
