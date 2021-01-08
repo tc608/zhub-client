@@ -5,12 +5,15 @@ import org.redkale.convert.json.JsonConvert;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
 
 /**
  * @author Liang
  * @data 2020-09-05 23:18
  */
 public abstract class AbstractConsumer implements IConsumer {
+
+    public Logger logger = Logger.getLogger(this.getClass().getSimpleName());
 
     public final Map<String, EventType> eventMap = new HashMap<>();
 

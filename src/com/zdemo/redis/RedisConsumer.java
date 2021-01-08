@@ -15,7 +15,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.logging.Level;
 
-public abstract class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
+public class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
 
     @Resource(name = "property.redis.host")
     private String host = "127.0.0.1";
@@ -79,6 +79,11 @@ public abstract class RedisConsumer extends AbstractConsumer implements IConsume
                 logger.log(Level.WARNING, "", e);
             }
         }).start();
+    }
+
+    @Override
+    public String getGroupid() {
+        return null;
     }
 
     @Override
