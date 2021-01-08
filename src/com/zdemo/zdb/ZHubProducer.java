@@ -11,9 +11,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 
-public class ZdbProducer<T extends Event> implements IProducer<T>, Service {
+public class ZHubProducer<T extends Event> implements IProducer<T>, Service {
 
     @Resource(name = "property.zdb.host")
     private String host = "39.108.56.246";
@@ -21,6 +22,8 @@ public class ZdbProducer<T extends Event> implements IProducer<T>, Service {
     private String password = "";
     @Resource(name = "property.zdb.port")
     private int port = 1216;
+
+    private ReentrantLock lock = new ReentrantLock();
 
     private OutputStream os;
 
@@ -38,22 +41,29 @@ public class ZdbProducer<T extends Event> implements IProducer<T>, Service {
 
     @Override
     public void send(T t) {
-        try {
-            String v = JsonConvert.root().convertTo(t.value);
-            if (v.startsWith("\"") && v.endsWith("\"")) {
-                v = v.substring(1, v.length() - 1);
-            }
+        String v = JsonConvert.root().convertTo(t.value);
+        if (v.startsWith("\"") && v.endsWith("\"")) {
+            v = v.substring(1, v.length() - 1);
+        }
+        send("publish", t.topic, v);
+    }
 
-            os.write("*3\r\n".getBytes());
-            os.write("$7\r\n".getBytes());
-            os.write("publish\r\n".getBytes());
-            os.write(("$" + t.topic.length() + "\r\n").getBytes());
-            os.write((t.topic + "\r\n").getBytes());
-            os.write(("$" + v.length() + "\r\n").getBytes());
-            os.write((v + "\r\n").getBytes());
-            os.flush();
+    private void send(String... data) {
+        try {
+            lock.lock();
+            if (data.length == 1) {
+                os.write((data[0] + "\r\n").getBytes());
+            } else if (data.length > 1) {
+                os.write(("*" + data.length + "\r\n").getBytes());
+                for (String d : data) {
+                    os.write(("$" + d.length() + "\r\n").getBytes());
+                    os.write((d + "\r\n").getBytes());
+                }
+            }
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
+        } finally {
+            lock.unlock();
         }
     }
 

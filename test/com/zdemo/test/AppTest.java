@@ -4,7 +4,7 @@ import com.zdemo.Event;
 import com.zdemo.EventType;
 import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
-import com.zdemo.zdb.ZdbProducer;
+import com.zdemo.zdb.ZHubProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
 
@@ -26,7 +26,7 @@ public class AppTest {
     public void runConsumer() {
         try {
             //启动并开启消费监听
-            IConsumer consumer = Application.singleton(MyConsumer.class);
+            MyConsumer consumer = Application.singleton(MyConsumer.class);
 
             consumer.addEventType(
                     EventType.of("a", str -> {
@@ -38,6 +38,10 @@ public class AppTest {
                     })
             );
 
+            consumer.timer("a", "* * * * * *", () -> {
+                System.out.println("timer a 执行了");
+            });
+
 
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {
@@ -48,7 +52,7 @@ public class AppTest {
     @Test
     public void runProducer() {
         try {
-            IProducer producer = Application.singleton(ZdbProducer.class);
+            IProducer producer = Application.singleton(ZHubProducer.class);
 
             // 发送不同的 事件
             float v0 = 1f;
@@ -79,7 +83,6 @@ public class AppTest {
 
     @Test
     public void t() {
-
         List<String> list = new ArrayList<>();
         list.toArray(String[]::new);
 
@@ -129,7 +132,7 @@ public class AppTest {
     public void yy() {
         IProducer producer = null;
         try {
-            producer = Application.singleton(ZdbProducer.class);
+            producer = Application.singleton(ZHubProducer.class);
 
             for (int i = 0; i < 100; i++) {
 
