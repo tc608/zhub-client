@@ -14,9 +14,11 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 
-public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service {
+public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer, Service {
 
     @Resource(name = "property.zdb.host")
     private String host = "39.108.56.246";
@@ -25,8 +27,11 @@ public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service 
     @Resource(name = "property.zdb.port")
     private int port = 1216;
 
+    private ReentrantLock lock = new ReentrantLock();
+
+
     private Socket client;
-    private OutputStream os;
+    private OutputStream writer;
     private BufferedReader reader;
 
     @Override
@@ -39,6 +44,8 @@ public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service 
                 try {
                     String readLine = reader.readLine();
                     String type = "";
+
+                    // 主题订阅消息
                     if ("*3".equals(readLine)) {
                         readLine = reader.readLine(); // $7 len()
                         type = reader.readLine(); // message
@@ -50,6 +57,20 @@ public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service 
 
                         reader.readLine(); //$n len(value)
                         value = reader.readLine(); // value
+                        accept(topic, value);
+                    }
+
+                    // timer 消息
+                    if ("*2".equals(readLine)) {
+                        readLine = reader.readLine(); // $7 len()
+                        type = reader.readLine(); // message
+                        if (!"timer".equals(type)) {
+                            continue;
+                        }
+                        reader.readLine(); //$n len(key)
+                        topic = reader.readLine(); // name
+
+
                         accept(topic, value);
                     }
                 } catch (IOException e) {
@@ -70,34 +91,54 @@ public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service 
         }).start();
     }
 
+    // ---------------------
+    // 消息发送类
+    private void send(String... data) {
+        try {
+            lock.lock();
+            if (data.length == 1) {
+                writer.write((data[0] + "\r\n").getBytes());
+            } else if (data.length > 1) {
+                writer.write(("*" + data.length + "\r\n").getBytes());
+                for (String d : data) {
+                    writer.write(("$" + d.length() + "\r\n").getBytes());
+                    writer.write((d + "\r\n").getBytes());
+                }
+            }
+            writer.flush();
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "", e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public boolean initSocket() {
         try {
             client = new Socket();
             client.connect(new InetSocketAddress(host, port));
             client.setKeepAlive(true);
 
-            os = client.getOutputStream();
+            writer = client.getOutputStream();
+            reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
+
+            send("groupid " + getGroupid());
 
             StringBuffer buf = new StringBuffer("subscribe");
             for (String topic : getTopics()) {
                 buf.append(" ").append(topic);
             }
             buf.append("\r\n");
-            os.write(buf.toString().getBytes());
-            os.flush();
 
-            reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
+            // todo: 重连 timer 订阅， 需要
+
+            send(buf.toString());
         } catch (IOException e) {
             logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
             return false;
         }
 
         return true;
-    }
-
-    @Override
-    public String getGroupid() {
-        return null;
     }
 
     @Override
@@ -111,23 +152,21 @@ public class ZdbConsumer extends AbstractConsumer implements IConsumer, Service 
                 eventMap.put(topic, type);
 
                 //新增订阅
-                try {
-                    os.write(("subscribe " + topic + "\r\n").getBytes());
-                    os.flush();
-                } catch (IOException e) {
-                    logger.log(Level.WARNING, "", e);
-                }
+                send("subscribe " + topic);
             }
         }
     }
 
     @Override
     public void unsubscribe(String topic) {
-        try {
-            os.write(("unsubscribe " + topic + "\r\n").getBytes());
-            os.flush();
-        } catch (IOException e) {
-            logger.log(Level.WARNING, "", e);
-        }
+        send("unsubscribe " + topic);
+    }
+
+    // timer
+    private ConcurrentHashMap<String, Runnable> timerMap = new ConcurrentHashMap();
+
+    public void timer(String name, String expr, Runnable run) {
+        timerMap.put(name, run);
+        send("timer", name, expr);
     }
 }
