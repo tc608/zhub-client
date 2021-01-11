@@ -20,11 +20,11 @@ import java.util.logging.Level;
 
 public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer, Service {
 
-    @Resource(name = "property.zdb.host")
-    private String host = "39.108.56.246";
-    @Resource(name = "property.zdb.password")
+    @Resource(name = "property.zhub.host")
+    private String host = "127.0.0.1";
+    @Resource(name = "property.zhub.password")
     private String password = "";
-    @Resource(name = "property.zdb.port")
+    @Resource(name = "property.zhub.port")
     private int port = 1216;
 
     private ReentrantLock lock = new ReentrantLock();
@@ -70,8 +70,10 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
                         reader.readLine(); //$n len(key)
                         topic = reader.readLine(); // name
 
-
-                        accept(topic, value);
+                        Timer timer = timerMap.get(topic);
+                        if (timer != null) {
+                            timer.runnable.run();
+                        }
                     }
                 } catch (IOException e) {
                     logger.log(Level.WARNING, "reconnection ", e.getMessage());
@@ -130,8 +132,10 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
             }
             buf.append("\r\n");
 
-            // todo: 重连 timer 订阅， 需要
-
+            // 重连 timer 订阅
+            timerMap.forEach((name, timer) -> {
+                send("timer", name, timer.expr, timer.single ? "a" : "x");
+            });
             send(buf.toString());
         } catch (IOException e) {
             logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
@@ -163,10 +167,44 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
     }
 
     // timer
-    private ConcurrentHashMap<String, Runnable> timerMap = new ConcurrentHashMap();
+    private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap();
 
     public void timer(String name, String expr, Runnable run) {
-        timerMap.put(name, run);
-        send("timer", name, expr);
+        timerMap.put(name, new Timer(name, expr, run, false));
+        send("timer", name, expr, "x");
+    }
+
+    public void timerSingle(String name, String expr, Runnable run) {
+        send("timer", name, expr, "a");
+        timerMap.put(name, new Timer(name, expr, run, true));
+    }
+
+    class Timer {
+        String name;
+        String expr;
+        Runnable runnable;
+        boolean single;
+
+        public String getName() {
+            return name;
+        }
+
+        public String getExpr() {
+            return expr;
+        }
+
+        public Runnable getRunnable() {
+            return runnable;
+        }
+
+        public boolean isSingle() {
+            return single;
+        }
+
+        public Timer(String name, String expr, Runnable runnable, boolean single) {
+            this.name = name;
+            this.runnable = runnable;
+            this.single = single;
+        }
     }
 }
