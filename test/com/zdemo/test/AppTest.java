@@ -1,12 +1,11 @@
 package com.zdemo.test;
 
 import com.zdemo.Event;
-import com.zdemo.EventType;
-import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
 import com.zdemo.zdb.ZHubProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
+import org.redkale.util.Utility;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,18 +27,18 @@ public class AppTest {
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            consumer.addEventType(
-                    EventType.of("a", str -> {
+            /*consumer.addEventType(
+                    EventType.of("ax", str -> {
                         System.out.println("我收到了消息 a 事件：" + str);
                     })
 
                     , EventType.of("bx", str -> {
                         System.out.println("我收到了消息 主题bx 事件：" + str);
                     })
-            );
+            );*/
 
-            consumer.timer("a", "* * * * * *", () -> {
-                System.out.println("timer a 执行了");
+            consumer.timerSingle("a", "*/10 * * * * *", () -> {
+                System.out.println(Utility.now() + "timer a 执行了");
             });
 
 
