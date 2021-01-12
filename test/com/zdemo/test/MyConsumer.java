@@ -1,8 +1,8 @@
 package com.zdemo.test;
 
-import com.zdemo.zdb.ZHubConsumer;
+import com.zdemo.zdb.ZHubClient;
 
-public class MyConsumer extends ZHubConsumer {
+public class MyConsumer extends ZHubClient {
 
     public String getGroupid() {
         return "group-test"; //消费组名称

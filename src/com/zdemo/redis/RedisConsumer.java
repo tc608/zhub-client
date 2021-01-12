@@ -14,8 +14,11 @@ import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
+
+    public Logger logger = Logger.getLogger(this.getClass().getSimpleName());
 
     @Resource(name = "property.redis.host")
     private String host = "127.0.0.1";
