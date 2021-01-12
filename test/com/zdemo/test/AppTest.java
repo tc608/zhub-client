@@ -1,8 +1,8 @@
 package com.zdemo.test;
 
 import com.zdemo.Event;
+import com.zdemo.EventType;
 import com.zdemo.IProducer;
-import com.zdemo.zdb.ZHubProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
 import org.redkale.util.Utility;
@@ -27,15 +27,11 @@ public class AppTest {
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            /*consumer.addEventType(
-                    EventType.of("ax", str -> {
+            consumer.addEventType(
+                    EventType.of("a-1", str -> {
                         System.out.println("我收到了消息 a 事件：" + str);
                     })
-
-                    , EventType.of("bx", str -> {
-                        System.out.println("我收到了消息 主题bx 事件：" + str);
-                    })
-            );*/
+            );
 
             consumer.timer("a", () -> {
                 System.out.println(Utility.now() + " timer a 执行了");
@@ -51,21 +47,10 @@ public class AppTest {
     @Test
     public void runProducer() {
         try {
-            IProducer producer = Application.singleton(ZHubProducer.class);
-
-            // 发送不同的 事件
-            float v0 = 1f;
-            Map v1 = Map.of("k", "v");
-            List v2 = asList(1, 2, 3);
-
-            //producer.send(Event.of("a1", v0));
-            /*producer.send(Event.of("b1", v1));
-            producer.send(Event.of("c1", v2));*/
-
-            /*producer.send(Event.of("game-update", 23256));
-            producer.send(Event.of("bx", 23256));*/
+            IProducer producer = Application.singleton(MyConsumer.class);
             for (int i = 0; i < 10_0000; i++) {
                 producer.send(Event.of("a-1", i + ""));
+                producer.send(Event.of("a-1", i));
             }
 
             try {
@@ -131,7 +116,7 @@ public class AppTest {
     public void yy() {
         IProducer producer = null;
         try {
-            producer = Application.singleton(ZHubProducer.class);
+            producer = Application.singleton(MyConsumer.class);
 
             for (int i = 0; i < 100; i++) {
 

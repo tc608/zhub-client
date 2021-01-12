@@ -18,12 +18,15 @@ import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * 消费
  */
 @RestService
 public abstract class KafakConsumer extends AbstractConsumer implements IConsumer, Service {
+
+    public Logger logger = Logger.getLogger(this.getClass().getSimpleName());
 
     @Resource(name = "APP_HOME")
     protected File APP_HOME;

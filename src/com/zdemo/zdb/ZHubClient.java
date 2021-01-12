@@ -1,8 +1,7 @@
 package com.zdemo.zdb;
 
-import com.zdemo.AbstractConsumer;
-import com.zdemo.EventType;
-import com.zdemo.IConsumer;
+import com.zdemo.*;
+import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
 
@@ -17,8 +16,11 @@ import java.net.SocketException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer, Service {
+public abstract class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
+
+    Logger logger = Logger.getLogger(IProducer.class.getSimpleName());
 
     @Resource(name = "property.zhub.host")
     private String host = "127.0.0.1";
@@ -106,7 +108,7 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
     }
 
     // ---------------------
-    // 消息发送类
+    // 消息发送
     private void send(String... data) {
         try {
             lock.lock();
@@ -125,6 +127,14 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
         } finally {
             lock.unlock();
         }
+    }
+
+    public void send(Event t) {
+        String v = JsonConvert.root().convertTo(t.value);
+        if (v.startsWith("\"") && v.endsWith("\"")) {
+            v = v.substring(1, v.length() - 1);
+        }
+        send("publish", t.topic, v);
     }
 
     public boolean initSocket() {
