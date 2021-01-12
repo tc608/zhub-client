@@ -37,8 +37,8 @@ public class AppTest {
                     })
             );*/
 
-            consumer.timerSingle("a", "*/10 * * * * *", () -> {
-                System.out.println(Utility.now() + "timer a 执行了");
+            consumer.timer("a", () -> {
+                System.out.println(Utility.now() + " timer a 执行了");
             });
 
 
