@@ -146,7 +146,7 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
 
             // 重连 timer 订阅
             timerMap.forEach((name, timer) -> {
-                send("timer", name, timer.expr, timer.single ? "a" : "x");
+                send("timer", name);
             });
         } catch (IOException e) {
             logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
@@ -180,43 +180,33 @@ public abstract class ZHubConsumer extends AbstractConsumer implements IConsumer
     // timer
     private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap();
 
-    public void timer(String name, String expr, Runnable run) {
-        timerMap.put(name, new Timer(name, expr, run, false));
-        send("timer", name, expr, "x");
+    public void timer(String name, Runnable run) {
+        timerMap.put(name, new Timer(name, run));
+        send("timer", name);
     }
 
-    public void timerSingle(String name, String expr, Runnable run) {
-        send("timer", name, expr, "a");
-        timerMap.put(name, new Timer(name, expr, run, true));
+    public void reloadTimer() {
+        send("cmd", "reload-timer-config");
     }
 
     class Timer {
         String name;
-        String expr;
+        //String expr;
         Runnable runnable;
-        boolean single;
+        //boolean single;
 
         public String getName() {
             return name;
         }
 
-        public String getExpr() {
-            return expr;
-        }
 
         public Runnable getRunnable() {
             return runnable;
         }
 
-        public boolean isSingle() {
-            return single;
-        }
-
-        public Timer(String name, String expr, Runnable runnable, boolean single) {
+        public Timer(String name, Runnable runnable) {
             this.name = name;
-            this.expr = expr;
             this.runnable = runnable;
-            this.single = single;
         }
     }
 }
