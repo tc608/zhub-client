@@ -9,12 +9,9 @@ import org.redkale.util.Utility;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-
-import static java.util.Arrays.asList;
 
 /**
  * 消息发布订阅测试

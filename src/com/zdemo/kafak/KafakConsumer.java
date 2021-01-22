@@ -9,6 +9,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
 import java.io.File;
@@ -17,6 +18,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -98,5 +100,15 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
     @Override
     public void unsubscribe(String topic) {
         queue.add(() -> eventMap.remove(topic)); // 加入延时执行队列（下一次订阅变更检查周期执行）
+    }
+
+    @Override
+    public void subscribe(String topic, Consumer<String> consumer) {
+        addEventType(EventType.of(topic, consumer));
+    }
+
+    @Override
+    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
+        addEventType(EventType.of(topic, typeToken, consumer));
     }
 }
