@@ -3,6 +3,7 @@ package com.zdemo;
 import org.redkale.util.TypeToken;
 
 import java.util.Collection;
+import java.util.function.Consumer;
 
 public interface IConsumer {
     TypeToken<String> TYPE_TOKEN_STRING = new TypeToken<String>() {
@@ -22,4 +23,8 @@ public interface IConsumer {
      * @param topic
      */
     void unsubscribe(String topic);
+
+    void subscribe(String topic, Consumer<String> consumer);
+    
+    <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer);
 }

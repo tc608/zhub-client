@@ -4,6 +4,7 @@ import com.zdemo.*;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
@@ -15,6 +16,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -218,5 +220,15 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
             this.name = name;
             this.runnable = runnable;
         }
+    }
+
+    @Override
+    public void subscribe(String topic, Consumer<String> consumer) {
+        addEventType(EventType.of(topic, consumer));
+    }
+
+    @Override
+    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
+        addEventType(EventType.of(topic, typeToken, consumer));
     }
 }
