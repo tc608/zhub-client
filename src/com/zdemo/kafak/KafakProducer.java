@@ -19,10 +19,10 @@ import java.util.logging.Level;
 /**
  * 生产
  *
- * @param <T>
+ * @param
  */
 @RestService
-public class KafakProducer<T extends Event> implements IProducer<T>, Service {
+public class KafakProducer implements IProducer, Service {
     private KafkaProducer<String, String> producer;
 
     @Resource(name = "APP_HOME")
@@ -40,8 +40,9 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
         }
     }
 
+    @Deprecated
     @Override
-    public void send(T t) {
+    public <T extends Event> void send(T t) {
         String v = JsonConvert.root().convertTo(t.value);
         if (v.startsWith("\"") && v.endsWith("\"")) {
             v = v.substring(1, v.length() - 1);
@@ -50,7 +51,19 @@ public class KafakProducer<T extends Event> implements IProducer<T>, Service {
     }
 
     @Override
+    public <V> void publish(String topic, V v) {
+        producer.send(new ProducerRecord(topic, toStr(v)));
+    }
+
+    @Override
     public void destroy(AnyValue config) {
         producer.close();
+    }
+
+    private <V> String toStr(V v) {
+        if (v instanceof String) {
+            return (String) v;
+        }
+        return JsonConvert.root().convertTo(v);
     }
 }

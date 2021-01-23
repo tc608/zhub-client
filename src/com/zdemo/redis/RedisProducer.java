@@ -13,7 +13,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.logging.Level;
 
-public class RedisProducer<T extends Event> implements IProducer<T>, Service {
+public class RedisProducer implements IProducer, Service {
 
     @Resource(name = "property.redis.host")
     private String host = "127.0.0.1";
@@ -39,8 +39,9 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
         }
     }
 
+    @Deprecated
     @Override
-    public void send(T t) {
+    public <T extends Event> void send(T t) {
         try {
             String v = JsonConvert.root().convertTo(t.value);
             if (v.startsWith("\"") && v.endsWith("\"")) {
@@ -52,5 +53,23 @@ public class RedisProducer<T extends Event> implements IProducer<T>, Service {
             logger.log(Level.WARNING, "", e);
 
         }
+    }
+
+    @Override
+    public <V> void publish(String topic, V v) {
+        try {
+            osw.write("PUBLISH " + topic + " '" + toStr(v) + "' \r\n");
+            osw.flush();
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "", e);
+
+        }
+    }
+
+    private <V> String toStr(V v) {
+        if (v instanceof String) {
+            return (String) v;
+        }
+        return JsonConvert.root().convertTo(v);
     }
 }
