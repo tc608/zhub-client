@@ -138,15 +138,6 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         return JsonConvert.root().convertTo(v);
     }
 
-    @Deprecated
-    public void send(Event t) {
-        String v = JsonConvert.root().convertTo(t.value);
-        if (v.startsWith("\"") && v.endsWith("\"")) {
-            v = v.substring(1, v.length() - 1);
-        }
-        send("publish", t.topic, v);
-    }
-
     public boolean initSocket() {
         try {
             client = new Socket();
