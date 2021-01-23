@@ -20,6 +20,7 @@ public abstract class AbstractConsumer implements IConsumer {
         return true;
     }
 
+    @Deprecated
     public void addEventType(EventType... eventType) {
         for (EventType type : eventType) {
             String[] topics = type.topic.split(",");

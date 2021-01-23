@@ -231,6 +231,15 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         }
     }
 
+
+    public <V> void publish(String topic, V v) {
+        send("publish", topic, toStr(v));
+    }
+    
+    public <V> void broadcast(String topic, V v) {
+        send("broadcast", topic, toStr(v));
+    }
+
     @Override
     public void subscribe(String topic, Consumer<String> consumer) {
         addEventType(EventType.of(topic, consumer));
