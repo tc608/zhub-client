@@ -131,6 +131,14 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         }
     }
 
+    private <V> String toStr(V v) {
+        if (v instanceof String) {
+            return (String) v;
+        }
+        return JsonConvert.root().convertTo(v);
+    }
+
+    @Deprecated
     public void send(Event t) {
         String v = JsonConvert.root().convertTo(t.value);
         if (v.startsWith("\"") && v.endsWith("\"")) {
@@ -168,6 +176,7 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         return true;
     }
 
+    @Deprecated
     @Override
     public void addEventType(EventType... eventType) {
         for (EventType type : eventType) {
