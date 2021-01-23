@@ -35,9 +35,6 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
 
     protected Properties props;
 
-    // 0:none 1:restart -1:stop
-    //private int cmd = -1;
-
     public abstract String getGroupid();
 
     private final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();

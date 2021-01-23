@@ -39,22 +39,6 @@ public class RedisProducer implements IProducer, Service {
         }
     }
 
-    @Deprecated
-    @Override
-    public <T extends Event> void send(T t) {
-        try {
-            String v = JsonConvert.root().convertTo(t.value);
-            if (v.startsWith("\"") && v.endsWith("\"")) {
-                v = v.substring(1, v.length() - 1);
-            }
-            osw.write("PUBLISH " + t.topic + " '" + v + "' \r\n");
-            osw.flush();
-        } catch (IOException e) {
-            logger.log(Level.WARNING, "", e);
-
-        }
-    }
-
     @Override
     public <V> void publish(String topic, V v) {
         try {

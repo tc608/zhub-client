@@ -40,7 +40,7 @@ public class KafakProducer implements IProducer, Service {
         }
     }
 
-    @Deprecated
+    /*@Deprecated
     @Override
     public <T extends Event> void send(T t) {
         String v = JsonConvert.root().convertTo(t.value);
@@ -48,7 +48,7 @@ public class KafakProducer implements IProducer, Service {
             v = v.substring(1, v.length() - 1);
         }
         producer.send(new ProducerRecord(t.topic, v));
-    }
+    }*/
 
     @Override
     public <V> void publish(String topic, V v) {
