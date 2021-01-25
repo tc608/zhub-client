@@ -28,6 +28,15 @@ public class AppTest {
 
             consumer.timer("a", () -> {
                 System.out.println(Utility.now() + " timer a 执行了");
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            });
+
+            consumer.timer("b", () -> {
+                System.out.println(Utility.now() + " ----------------- timer b 执行了");
             });
 
 

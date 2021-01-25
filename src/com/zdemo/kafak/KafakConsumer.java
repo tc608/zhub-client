@@ -42,9 +42,6 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
     @Override
     public void addEventType(EventType... eventTypes) {
         super.addEventType(eventTypes);
-
-        // 增加变更标记
-        queue.add(() -> logger.info("KafakConsumer add new topic!"));
     }
 
     @Override
