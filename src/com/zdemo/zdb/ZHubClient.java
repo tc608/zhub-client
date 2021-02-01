@@ -277,6 +277,10 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         send("broadcast", topic, toStr(v));
     }
 
+    public <V> void delay(String topic, V v, int delay) {
+        send("delay", topic, toStr(v), String.valueOf(delay));
+    }
+
     @Override
     public void subscribe(String topic, Consumer<String> consumer) {
         addEventType(EventType.of(topic, consumer));
