@@ -10,11 +10,13 @@ import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.logging.Logger;
 
 /**
  * 消息发布订阅测试
  */
 public class AppTest {
+    Logger logger = Logger.getLogger("");
 
     @Test
     public void runConsumer() {
@@ -22,8 +24,8 @@ public class AppTest {
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            consumer.subscribe("a-1", str -> {
-                System.out.println("我收到了消息 a 事件：" + str);
+            consumer.subscribe("a", str -> {
+                logger.info("我收到了消息 a 事件：" + str);
             });
 
             consumer.timer("a", () -> {
@@ -38,7 +40,9 @@ public class AppTest {
             consumer.timer("b", () -> {
                 System.out.println(Utility.now() + " ----------------- timer b 执行了");
             });
-
+            consumer.delay("a", "1", 3000);
+            consumer.delay("a", "1", 5000);
+            logger.info("----");
 
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {
