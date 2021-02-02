@@ -1,6 +1,6 @@
 package com.zdemo.test;
 
-import com.zdemo.zdb.ZHubClient;
+import com.zdemo.zhub.ZHubClient;
 
 public class MyConsumer extends ZHubClient {
 

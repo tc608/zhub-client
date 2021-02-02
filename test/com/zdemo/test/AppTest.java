@@ -25,6 +25,7 @@ public class AppTest {
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
             consumer.subscribe("a", str -> {
+                System.out.println(System.currentTimeMillis());
                 logger.info("我收到了消息 a 事件：" + str);
             });
 
@@ -40,9 +41,9 @@ public class AppTest {
             consumer.timer("b", () -> {
                 System.out.println(Utility.now() + " ----------------- timer b 执行了");
             });
-            consumer.delay("a", "1", 3000);
-            consumer.delay("a", "1", 5000);
-            logger.info("----");
+            //consumer.delay("a", "1", 200);
+            System.out.println(System.currentTimeMillis());
+            consumer.delay("a", "1", "2000");
 
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {
