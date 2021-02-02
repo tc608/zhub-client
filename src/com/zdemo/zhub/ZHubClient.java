@@ -1,4 +1,4 @@
-package com.zdemo.zdb;
+package com.zdemo.zhub;
 
 import com.zdemo.*;
 import org.redkale.convert.json.JsonConvert;
@@ -277,8 +277,42 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         send("broadcast", topic, toStr(v));
     }
 
+    // 发送 publish 主题消息，若多次发送的 topic + "-" + value 相同，将会做延时重置
     public <V> void delay(String topic, V v, int delay) {
         send("delay", topic, toStr(v), String.valueOf(delay));
+    }
+
+    // 表达式支持：d+[d,H,m,s]
+    public <V> void delay(String topic, V v, String delayExpr) {
+        String endchar = "";
+        int delay;
+        if (delayExpr.matches("^\\d+[d,H,m,s]$")) {
+            endchar = delayExpr.substring(delayExpr.length() - 1);
+            delay = Integer.parseInt(delayExpr.substring(0, delayExpr.length() - 1));
+        } else {
+            if (!delayExpr.matches("^\\d+$")) {
+                throw new IllegalArgumentException(String.format("ScheduledCycle period config error: [%s]", delayExpr));
+            }
+
+            delay = Integer.parseInt(delayExpr);
+            if (delay <= 0L) {
+                throw new IllegalArgumentException(String.format("ScheduledCycle period config error: [%s]", delayExpr));
+            }
+        }
+
+        if ("M".equals(endchar)) {
+            delay *= (1000 * 60 * 60 * 24 * 30);
+        } else if ("d".equals(endchar)) {
+            delay *= (1000 * 60 * 60 * 24);
+        } else if ("H".equals(endchar)) {
+            delay *= (1000 * 60 * 60);
+        } else if ("m".equals(endchar)) {
+            delay *= (1000 * 60);
+        } else if ("s".equals(endchar)) {
+            delay *= 1000;
+        }
+
+        delay(topic, v, delay);
     }
 
     @Override
