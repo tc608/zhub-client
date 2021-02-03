@@ -1,10 +1,12 @@
 package com.zdemo;
 
 import org.redkale.convert.json.JsonConvert;
+import org.redkale.util.TypeToken;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * @author Liang
@@ -12,29 +14,15 @@ import java.util.Set;
  */
 public abstract class AbstractConsumer implements IConsumer {
 
-    public final Map<String, EventType> eventMap = new HashMap<>();
+    private Map<String, EventType> eventMap = new HashMap<>();
 
-    public abstract String getGroupid();
+    protected abstract String getGroupid();
 
-    public boolean preInit() {
+    protected boolean preInit() {
         return true;
     }
 
-    @Deprecated
-    public void addEventType(EventType... eventType) {
-        for (EventType type : eventType) {
-            String[] topics = type.topic.split(",");
-            for (String topic : topics) {
-                if (topic.isEmpty()) {
-                    continue;
-                }
-                eventMap.put(topic, type);
-            }
-        }
-    }
-
-    @Override
-    public final Set<String> getTopics() {
+    protected final Set<String> getTopics() {
         if (!eventMap.isEmpty()) {
             return eventMap.keySet();
         }
@@ -42,8 +30,7 @@ public abstract class AbstractConsumer implements IConsumer {
         return Set.of("-");
     }
 
-    @Override
-    public final void accept(String topic, String value) {
+    protected void accept(String topic, String value) {
         EventType eventType = eventMap.get(topic);
 
         Object data = null;
@@ -56,5 +43,31 @@ public abstract class AbstractConsumer implements IConsumer {
         eventType.accept(data);
     }
 
+    protected final void removeEventType(String topic) {
+        eventMap.remove(topic);
+    }
+
+    /**
+     * 不同组件的订阅事件 发送
+     *
+     * @param topic
+     */
+    protected abstract void subscribe(String topic);
+
+    public void subscribe(String topic, Consumer<String> consumer) {
+        subscribe(topic, TYPE_TOKEN_STRING, consumer);
+    }
+
+    @Override
+    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
+        if (topic.contains(",")) {
+            for (String x : topic.split(",")) {
+                subscribe(x, typeToken, consumer);
+            }
+        }
+
+        eventMap.put(topic, EventType.of(topic, typeToken, consumer));
+        subscribe(topic);
+    }
 
 }

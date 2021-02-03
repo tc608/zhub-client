@@ -1,10 +1,12 @@
 package com.zdemo.zhub;
 
-import com.zdemo.*;
+import com.zdemo.AbstractConsumer;
+import com.zdemo.Event;
+import com.zdemo.IConsumer;
+import com.zdemo.IProducer;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
-import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
@@ -18,13 +20,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public abstract class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
 
-    Logger logger = Logger.getLogger(IProducer.class.getSimpleName());
+    Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
 
     @Resource(name = "property.zhub.host")
     private String host = "127.0.0.1";
@@ -134,7 +135,7 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
                     logger.log(Level.WARNING, "timer [" + timer.name + "]", e);
                 }
             }
-        }, 2);
+        }, 1);
 
         threadBuilder.accept(() -> {
             while (true) {
@@ -184,7 +185,7 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         return JsonConvert.root().convertTo(v);
     }
 
-    public boolean initSocket() {
+    protected boolean initSocket() {
         try {
             client = new Socket();
             client.connect(new InetSocketAddress(host, port));
@@ -213,61 +214,11 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         return true;
     }
 
-    @Deprecated
-    @Override
-    public void addEventType(EventType... eventType) {
-        for (EventType type : eventType) {
-            String[] topics = type.topic.split(",");
-            for (String topic : topics) {
-                if (topic.isEmpty()) {
-                    continue;
-                }
-                eventMap.put(topic, type);
-
-                //新增订阅
-                send("subscribe " + topic);
-            }
-        }
-    }
-
     @Override
     public void unsubscribe(String topic) {
         send("unsubscribe " + topic);
+        super.removeEventType(topic);
     }
-
-    // timer
-    private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap();
-
-    public void timer(String name, Runnable run) {
-        timerMap.put(name, new Timer(name, run));
-        send("timer", name);
-    }
-
-    public void reloadTimer() {
-        send("cmd", "reload-timer-config");
-    }
-
-    class Timer {
-        String name;
-        //String expr;
-        Runnable runnable;
-        //boolean single;
-
-        public String getName() {
-            return name;
-        }
-
-
-        public Runnable getRunnable() {
-            return runnable;
-        }
-
-        public Timer(String name, Runnable runnable) {
-            this.name = name;
-            this.runnable = runnable;
-        }
-    }
-
 
     public <V> void publish(String topic, V v) {
         send("publish", topic, toStr(v));
@@ -316,12 +267,41 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
     }
 
     @Override
-    public void subscribe(String topic, Consumer<String> consumer) {
-        addEventType(EventType.of(topic, consumer));
+    protected void subscribe(String topic) {
+        send("subscribe " + topic); //新增订阅
     }
 
-    @Override
-    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
-        addEventType(EventType.of(topic, typeToken, consumer));
+
+    // ================================================== timer ==================================================
+    private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap();
+
+    class Timer {
+        String name;
+        //String expr;
+        Runnable runnable;
+        //boolean single;
+
+        public String getName() {
+            return name;
+        }
+
+
+        public Runnable getRunnable() {
+            return runnable;
+        }
+
+        public Timer(String name, Runnable runnable) {
+            this.name = name;
+            this.runnable = runnable;
+        }
+    }
+
+    public void timer(String name, Runnable run) {
+        timerMap.put(name, new Timer(name, run));
+        send("timer", name);
+    }
+
+    public void reloadTimer() {
+        send("cmd", "reload-timer-config");
     }
 }

@@ -1,6 +1,5 @@
 package com.zdemo.redis;
 
-import com.zdemo.Event;
 import com.zdemo.IProducer;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;

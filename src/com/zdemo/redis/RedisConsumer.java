@@ -1,11 +1,9 @@
 package com.zdemo.redis;
 
 import com.zdemo.AbstractConsumer;
-import com.zdemo.EventType;
 import com.zdemo.IConsumer;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
-import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
@@ -14,7 +12,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -87,29 +84,8 @@ public class RedisConsumer extends AbstractConsumer implements IConsumer, Servic
     }
 
     @Override
-    public String getGroupid() {
+    protected String getGroupid() {
         return null;
-    }
-
-    @Override
-    public void addEventType(EventType... eventType) {
-        for (EventType type : eventType) {
-            String[] topics = type.topic.split(",");
-            for (String topic : topics) {
-                if (topic.isEmpty()) {
-                    continue;
-                }
-                eventMap.put(topic, type);
-
-                //新增订阅
-                try {
-                    writer.write("SUBSCRIBE " + topic + "\r\n");
-                    writer.flush();
-                } catch (IOException e) {
-                    logger.log(Level.WARNING, "", e);
-                }
-            }
-        }
     }
 
     @Override
@@ -120,15 +96,17 @@ public class RedisConsumer extends AbstractConsumer implements IConsumer, Servic
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
         }
+        super.removeEventType(topic);
     }
 
     @Override
-    public void subscribe(String topic, Consumer<String> consumer) {
-        addEventType(EventType.of(topic, consumer));
-    }
-
-    @Override
-    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
-        addEventType(EventType.of(topic, typeToken, consumer));
+    protected void subscribe(String topic) {
+        //新增订阅
+        try {
+            writer.write("SUBSCRIBE " + topic + "\r\n");
+            writer.flush();
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "", e);
+        }
     }
 }
