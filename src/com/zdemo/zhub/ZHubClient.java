@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 
 public abstract class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
 
-    Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
+    public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
 
     @Resource(name = "property.zhub.host")
     private String host = "127.0.0.1";
