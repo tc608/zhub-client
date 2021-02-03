@@ -1,7 +1,6 @@
 package com.zdemo.kafak;
 
 import com.zdemo.AbstractConsumer;
-import com.zdemo.EventType;
 import com.zdemo.IConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -9,7 +8,6 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
-import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
 import java.io.File;
@@ -18,7 +16,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -33,16 +30,9 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
     @Resource(name = "APP_HOME")
     protected File APP_HOME;
 
-    protected Properties props;
-
     public abstract String getGroupid();
 
     private final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
-
-    @Override
-    public void addEventType(EventType... eventTypes) {
-        super.addEventType(eventTypes);
-    }
 
     @Override
     public final void init(AnyValue config) {
@@ -50,7 +40,7 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
             return;
         }
         try (FileInputStream fis = new FileInputStream(new File(APP_HOME, "conf/kafak.properties"));) {
-            props = new Properties();
+            Properties props = new Properties();
             props.load(fis);
 
             new Thread(() -> {
@@ -93,16 +83,13 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
 
     @Override
     public void unsubscribe(String topic) {
-        queue.add(() -> eventMap.remove(topic)); // 加入延时执行队列（下一次订阅变更检查周期执行）
+        queue.add(() -> super.removeEventType(topic)); // 加入延时执行队列（下一次订阅变更检查周期执行）
     }
 
     @Override
-    public void subscribe(String topic, Consumer<String> consumer) {
-        addEventType(EventType.of(topic, consumer));
-    }
-
-    @Override
-    public <T> void subscribe(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {
-        addEventType(EventType.of(topic, typeToken, consumer));
+    protected void subscribe(String topic) {
+        queue.add(() -> {
+            // just set flag, nothing to do
+        });
     }
 }

@@ -1,6 +1,5 @@
 package com.zdemo.kafak;
 
-import com.zdemo.Event;
 import com.zdemo.IProducer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -39,16 +38,6 @@ public class KafakProducer implements IProducer, Service {
             logger.log(Level.WARNING, "未初始化kafak 生产者，kafak发布消息不可用", e);
         }
     }
-
-    /*@Deprecated
-    @Override
-    public <T extends Event> void send(T t) {
-        String v = JsonConvert.root().convertTo(t.value);
-        if (v.startsWith("\"") && v.endsWith("\"")) {
-            v = v.substring(1, v.length() - 1);
-        }
-        producer.send(new ProducerRecord(t.topic, v));
-    }*/
 
     @Override
     public <V> void publish(String topic, V v) {
