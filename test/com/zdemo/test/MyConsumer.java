@@ -9,7 +9,7 @@ public class MyConsumer extends ZHubClient {
     }
 
     @Override
-    public boolean preInit() {
+    protected boolean preInit() {
         return true;
     }
 }

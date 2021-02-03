@@ -64,10 +64,10 @@ public abstract class AbstractConsumer implements IConsumer {
             for (String x : topic.split(",")) {
                 subscribe(x, typeToken, consumer);
             }
+        } else {
+            eventMap.put(topic, EventType.of(topic, typeToken, consumer));
+            subscribe(topic);
         }
-
-        eventMap.put(topic, EventType.of(topic, typeToken, consumer));
-        subscribe(topic);
     }
 
 }

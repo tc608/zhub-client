@@ -30,8 +30,6 @@ public abstract class KafakConsumer extends AbstractConsumer implements IConsume
     @Resource(name = "APP_HOME")
     protected File APP_HOME;
 
-    public abstract String getGroupid();
-
     private final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
 
     @Override
