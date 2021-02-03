@@ -4,7 +4,13 @@
 
     <resources>
         <properties load="config.properties"></properties>
+        <listener value="com.zdemo.ZhubListener"/>
     </resources>
+
+    <zhubs>
+        <zhub name="zhub" addr="47.111.150.118" port="6066" groupid="platf-zhub"/>
+        <zhub name="zhub2" addr="47.111.150.118" port="6066" groupid="platf-chat"/>
+    </zhubs>
 
     <server protocol="HTTP" port="80">
         <request>

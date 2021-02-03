@@ -7,6 +7,7 @@ import com.zdemo.IProducer;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
@@ -23,7 +24,8 @@ import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public abstract class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
+@AutoLoad(value = false)
+public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
 
@@ -33,6 +35,8 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
     private String password = "";
     @Resource(name = "property.zhub.port")
     private int port = 1216;
+    @Resource(name = "property.zhub.groupid")
+    private String groupid = "";
 
     private ReentrantLock lock = new ReentrantLock();
     private Socket client;
@@ -53,6 +57,14 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         if (!preInit()) {
             return;
         }
+
+        // 自动注入
+        if (config != null) {
+            host = config.getValue("addr", host);
+            port = config.getIntValue("port", port);
+            groupid = config.getValue("groupid", groupid);
+        }
+
         if (!initSocket()) {
             return;
         }
@@ -194,7 +206,11 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
             writer = client.getOutputStream();
             reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
 
-            send("groupid " + getGroupid());
+            String groupid = getGroupid();
+            if (groupid == null || groupid.isEmpty()) {
+                throw new RuntimeException("ZHubClient groupid can not is empty");
+            }
+            send("groupid " + groupid);
 
             StringBuffer buf = new StringBuffer("subscribe");
             for (String topic : getTopics()) {
@@ -207,6 +223,9 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
                 send("timer", name);
             });
         } catch (IOException e) {
+            logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
+            return false;
+        } catch (Exception e) {
             logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
             return false;
         }
@@ -264,6 +283,11 @@ public abstract class ZHubClient extends AbstractConsumer implements IConsumer, 
         }
 
         delay(topic, v, delay);
+    }
+
+    @Override
+    protected String getGroupid() {
+        return groupid;
     }
 
     @Override
