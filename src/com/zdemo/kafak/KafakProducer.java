@@ -40,8 +40,9 @@ public class KafakProducer implements IProducer, Service {
     }
 
     @Override
-    public <V> void publish(String topic, V v) {
+    public boolean publish(String topic, Object v) {
         producer.send(new ProducerRecord(topic, toStr(v)));
+        return true;
     }
 
     @Override

@@ -65,7 +65,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             groupid = config.getValue("groupid", groupid);
         }
 
-        if (!initSocket()) {
+        if (!initSocket(0)) {
             return;
         }
         // 消息 事件接收
@@ -73,14 +73,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             while (true) {
                 try {
                     String readLine = reader.readLine();
-                    if (readLine == null) { // 连接中断 处理
-                        while (!initSocket()) {
-                            try {
-                                Thread.sleep(1000 * 5);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
+                    if (readLine == null && initSocket(Integer.MAX_VALUE)) { // 连接中断 处理
+                        continue;
                     }
 
                     String type = "";
@@ -113,15 +107,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                         timerQueue.put(timerMap.get(topic));
                     }
                 } catch (IOException e) {
-                    logger.log(Level.WARNING, "reconnection ", e.getMessage());
                     if (e instanceof SocketException) {
-                        while (!initSocket()) {
-                            try {
-                                Thread.sleep(1000 * 5);
-                            } catch (InterruptedException interruptedException) {
-                                interruptedException.printStackTrace();
-                            }
-                        }
+                        initSocket(Integer.MAX_VALUE);
                     }
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -170,7 +157,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     // ---------------------
     // 消息发送
-    private void send(String... data) {
+    private boolean send(String... data) {
         try {
             lock.lock();
             if (data.length == 1) {
@@ -183,54 +170,68 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 }
             }
             writer.flush();
+            return true;
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
         } finally {
             lock.unlock();
         }
+        return false;
     }
 
-    private <V> String toStr(V v) {
+    private String toStr(Object v) {
         if (v instanceof String) {
             return (String) v;
         }
         return JsonConvert.root().convertTo(v);
     }
 
-    protected boolean initSocket() {
-        try {
-            client = new Socket();
-            client.connect(new InetSocketAddress(host, port));
-            client.setKeepAlive(true);
+    protected boolean initSocket(int retry) {
+        for (int i = 0; i <= retry; i++) {
+            try {
+                client = new Socket();
+                client.connect(new InetSocketAddress(host, port));
+                client.setKeepAlive(true);
 
-            writer = client.getOutputStream();
-            reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                writer = client.getOutputStream();
+                reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
 
-            String groupid = getGroupid();
-            if (groupid == null || groupid.isEmpty()) {
-                throw new RuntimeException("ZHubClient groupid can not is empty");
+                String groupid = getGroupid();
+                if (groupid == null || groupid.isEmpty()) {
+                    throw new RuntimeException("ZHubClient groupid can not is empty");
+                }
+                send("groupid " + groupid);
+
+                StringBuffer buf = new StringBuffer("subscribe");
+                for (String topic : getTopics()) {
+                    buf.append(" ").append(topic);
+                }
+                send(buf.toString());
+
+                // 重连 timer 订阅
+                timerMap.forEach((name, timer) -> {
+                    send("timer", name);
+                });
+                if (retry > 0) {
+                    logger.log(Level.WARNING, String.format("ZHubClient[%s][%s] %s Succeed！", getGroupid(), i + 1, retry > 0 ? "reconnection" : "init"));
+                } else {
+                    logger.log(Level.FINE, String.format("ZHubClient[%s] %s Succeed！", getGroupid(), retry > 0 ? "reconnection" : "init"));
+                }
+                return true;
+            } catch (Exception e) {
+                if (retry == 0 || i > 0) {
+                    logger.log(Level.WARNING, String.format("ZHubClient[%s] %s Failed 初始化失败！", getGroupid(), retry == 0 ? "init" : "reconnection"), e);
+                } else {
+                    logger.log(Level.WARNING, String.format("ZHubClient[%s][%s] reconnection Failed！", getGroupid(), i + 1));
+                    try {
+                        Thread.sleep(1000 * 5);
+                    } catch (InterruptedException interruptedException) {
+                        interruptedException.printStackTrace();
+                    }
+                }
             }
-            send("groupid " + groupid);
-
-            StringBuffer buf = new StringBuffer("subscribe");
-            for (String topic : getTopics()) {
-                buf.append(" ").append(topic);
-            }
-            send(buf.toString());
-
-            // 重连 timer 订阅
-            timerMap.forEach((name, timer) -> {
-                send("timer", name);
-            });
-        } catch (IOException e) {
-            logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
-            return false;
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "Zdb Consumer 初始化失败！", e);
-            return false;
         }
-
-        return true;
+        return false;
     }
 
     @Override
@@ -239,21 +240,21 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         super.removeEventType(topic);
     }
 
-    public <V> void publish(String topic, V v) {
-        send("publish", topic, toStr(v));
+    public boolean publish(String topic, Object v) {
+        return send("publish", topic, toStr(v));
     }
 
-    public <V> void broadcast(String topic, V v) {
+    public void broadcast(String topic, Object v) {
         send("broadcast", topic, toStr(v));
     }
 
     // 发送 publish 主题消息，若多次发送的 topic + "-" + value 相同，将会做延时重置
-    public <V> void delay(String topic, V v, int delay) {
+    public void delay(String topic, Object v, int delay) {
         send("delay", topic, toStr(v), String.valueOf(delay));
     }
 
     // 表达式支持：d+[d,H,m,s]
-    public <V> void delay(String topic, V v, String delayExpr) {
+    public void delay(String topic, Object v, String delayExpr) {
         String endchar = "";
         int delay;
         if (delayExpr.matches("^\\d+[d,H,m,s]$")) {
@@ -326,6 +327,6 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     }
 
     public void reloadTimer() {
-        send("cmd", "reload-timer-config");
+        send("cmd", "reload-timer");
     }
 }

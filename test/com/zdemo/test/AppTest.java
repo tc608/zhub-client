@@ -1,12 +1,15 @@
 package com.zdemo.test;
 
+import com.zdemo.Event;
 import com.zdemo.IProducer;
 import org.junit.Test;
 import org.redkale.boot.Application;
+import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.Utility;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -304,5 +307,12 @@ public class AppTest {
             return _a % _b > 0 ? -2 : _a / _b; // 除不尽
         }
         return 0;
+    }
+
+    @Test
+    public void testxx() {
+        Event of = Event.of("A", Map.of("b", 1));
+
+        System.out.println(JsonConvert.root().convertTo(of));
     }
 }
