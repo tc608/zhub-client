@@ -39,17 +39,18 @@ public class RedisProducer implements IProducer, Service {
     }
 
     @Override
-    public <V> void publish(String topic, V v) {
+    public boolean publish(String topic, Object v) {
         try {
             osw.write("PUBLISH " + topic + " '" + toStr(v) + "' \r\n");
             osw.flush();
+            return true;
         } catch (IOException e) {
             logger.log(Level.WARNING, "", e);
-
         }
+        return false;
     }
 
-    private <V> String toStr(V v) {
+    private String toStr(Object v) {
         if (v instanceof String) {
             return (String) v;
         }
