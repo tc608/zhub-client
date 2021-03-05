@@ -36,12 +36,19 @@ public class RedisTest {
         a = source.getBit("a", 1);
         System.out.println("bit-a-1: " + a);*/
 
-        source.remove("a");
+        /*source.remove("a");
 
         // setnx
         System.out.println(source.setnx("a", 1));
         source.remove("a");
         System.out.println(source.setnx("a", 1));
+
+        // set
+        source.remove("abx1");
+        source.appendSetItems("abx1", "a", "b", "c");
+        List<String> list = source.srandomItems("abx1", 2);
+        String str = source.srandomItem("abx1"); //r
+        System.out.println(list);//[r1, r2]  */
 
         /*int[] arr = {0};
         ExecutorService executor = Executors.newFixedThreadPool(10);
