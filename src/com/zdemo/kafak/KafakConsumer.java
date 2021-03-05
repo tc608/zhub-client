@@ -5,9 +5,9 @@ import com.zdemo.IConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
-import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
 
 import javax.annotation.Resource;
 import java.io.File;
@@ -22,7 +22,7 @@ import java.util.logging.Logger;
 /**
  * 消费
  */
-@RestService
+@AutoLoad(false)
 public abstract class KafakConsumer extends AbstractConsumer implements IConsumer, Service {
 
     public Logger logger = Logger.getLogger(this.getClass().getSimpleName());

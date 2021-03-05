@@ -4,9 +4,9 @@ import com.zdemo.IProducer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.redkale.convert.json.JsonConvert;
-import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
 
 import javax.annotation.Resource;
 import java.io.File;
@@ -20,7 +20,7 @@ import java.util.logging.Level;
  *
  * @param
  */
-@RestService
+@AutoLoad(false)
 public class KafakProducer implements IProducer, Service {
     private KafkaProducer<String, String> producer;
 

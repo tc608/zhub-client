@@ -4,6 +4,7 @@ import com.zdemo.IProducer;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
 
 import javax.annotation.Resource;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.logging.Level;
 
+@AutoLoad(false)
 public class RedisProducer implements IProducer, Service {
 
     @Resource(name = "property.redis.host")

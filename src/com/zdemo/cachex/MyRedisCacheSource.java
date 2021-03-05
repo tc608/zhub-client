@@ -204,7 +204,18 @@ public class MyRedisCacheSource<V extends Object> extends RedisCacheSource<V> {
         return (List<T>) send("EVAL", CacheEntryType.OBJECT, (Type) null, null, bytes).join();
     }
 
-    //---------------------  ------------------------------
+    //--------------------- set ------------------------------
+    public <T> T srandomItem(String key) {
+        byte[][] bytes = Stream.of(key, 1).map(x -> formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, x)).toArray(byte[][]::new);
+        List<T> list = (List) send("SRANDMEMBER", null, (Type) null, key, bytes).join();
+        return list != null && !list.isEmpty() ? list.get(0) : null;
+    }
+
+    public <T> List<T> srandomItems(String key, int n) {
+        byte[][] bytes = Stream.of(key, n).map(x -> formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, x)).toArray(byte[][]::new);
+        return (List) send("SRANDMEMBER", null, (Type) null, key, bytes).join();
+    }
+
     //--------------------- list ------------------------------
     public CompletableFuture<Void> appendListItemsAsync(String key, V... values) {
         byte[][] bytes = Stream.concat(Stream.of(key), Stream.of(values)).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);

@@ -4,6 +4,7 @@ import com.zdemo.AbstractConsumer;
 import com.zdemo.IConsumer;
 import org.redkale.service.Service;
 import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
@@ -15,6 +16,7 @@ import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@AutoLoad(false)
 public class RedisConsumer extends AbstractConsumer implements IConsumer, Service {
 
     public Logger logger = Logger.getLogger(this.getClass().getSimpleName());
