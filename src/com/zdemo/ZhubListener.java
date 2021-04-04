@@ -7,6 +7,7 @@ import org.redkale.util.AnyValue;
 import org.redkale.util.RedkaleClassLoader;
 import org.redkale.util.ResourceFactory;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,14 +31,11 @@ public class ZhubListener implements ApplicationListener {
                 String clazz = zhub.getValue("value", "com.zdemo.zhub.ZHubClient");
                 try {
                     Class<?> aClass = classLoader.loadClass(clazz);
-                    Service obj = (Service) aClass.newInstance();
+                    Service obj = (Service) aClass.getDeclaredConstructor().newInstance();
+                    application.getResourceFactory().inject(obj);
                     obj.init(zhub);
                     resourceFactory.register(zhub.get("name"), aClass, obj);
-                } catch (ClassNotFoundException e) {
-                    e.printStackTrace();
-                } catch (IllegalAccessException e) {
-                    e.printStackTrace();
-                } catch (InstantiationException e) {
+                } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException e) {
                     e.printStackTrace();
                 }
             }
