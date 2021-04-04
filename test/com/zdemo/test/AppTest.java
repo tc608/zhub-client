@@ -2,16 +2,17 @@ package com.zdemo.test;
 
 import com.zdemo.Event;
 import com.zdemo.IProducer;
+import com.zdemo.zhub.Lock;
 import org.junit.Test;
 import org.redkale.boot.Application;
 import org.redkale.convert.json.JsonConvert;
-import org.redkale.util.Utility;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 
@@ -27,7 +28,7 @@ public class AppTest {
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            consumer.subscribe("a", str -> {
+            /*consumer.subscribe("a", str -> {
                 logger.info("我收到了消息 a 事件：" + str);
             });
 
@@ -44,7 +45,27 @@ public class AppTest {
                 System.out.println(Utility.now() + " ----------------- timer b 执行了");
             });
             //consumer.delay("a", "1", 200);
-            consumer.delay("a", "1", "2000");
+            consumer.delay("a", "1", "2000");*/
+
+            Consumer<String> con = x -> {
+                logger.info("--->开始申请锁:" + System.currentTimeMillis());
+                Lock lock = consumer.tryLock("a", 20);
+                logger.info("===>成功申请锁:" + System.currentTimeMillis());
+                for (int i = 0; i < 20; i++) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    System.out.println(x + ":" + i);
+                }
+                lock.unLock();
+            };
+
+            new Thread(() -> con.accept("x")).start();
+            new Thread(() -> con.accept("y")).start();
+            new Thread(() -> con.accept("z")).start();
+
 
             Thread.sleep(60_000 * 60);
         } catch (Exception e) {

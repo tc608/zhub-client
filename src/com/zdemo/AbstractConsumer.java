@@ -3,6 +3,7 @@ package com.zdemo;
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.TypeToken;
 
+import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +14,11 @@ import java.util.function.Consumer;
  * @data 2020-09-05 23:18
  */
 public abstract class AbstractConsumer implements IConsumer {
+
+    protected JsonConvert convert = JsonConvert.root();
+
+    @Resource(name = "APP_NAME")
+    protected String APP_NAME = "";
 
     private Map<String, EventType> eventMap = new HashMap<>();
 
@@ -37,7 +43,7 @@ public abstract class AbstractConsumer implements IConsumer {
         if ("java.lang.String".equals(eventType.typeToken.getType().getTypeName())) {
             data = value;
         } else {
-            data = JsonConvert.root().convertFrom(eventType.typeToken.getType(), value);
+            data = convert.convertFrom(eventType.typeToken.getType(), value);
         }
 
         eventType.accept(data);
