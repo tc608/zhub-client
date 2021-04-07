@@ -1,6 +1,6 @@
 package com.zdemo.zhub;
 
-public class RpcResponse<R> {
+public class RpcResult<R> {
     private String ruk;
     private int retcode;
     private String retinfo;

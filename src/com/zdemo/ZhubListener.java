@@ -28,13 +28,13 @@ public class ZhubListener implements ApplicationListener {
             AnyValue zhubs = appConfig.getAnyValue("zhubs");
             AnyValue[] values = zhubs.getAnyValues("zhub");
             for (AnyValue zhub : values) {
-                String clazz = zhub.getValue("value", "com.zdemo.zhub.ZHubClient");
+                String className = zhub.getValue("value", "com.zdemo.zhub.ZHubClient");
                 try {
-                    Class<?> aClass = classLoader.loadClass(clazz);
-                    Service obj = (Service) aClass.getDeclaredConstructor().newInstance();
+                    Class<?> clazz = classLoader.loadClass(className);
+                    Service obj = (Service) clazz.getDeclaredConstructor().newInstance();
                     application.getResourceFactory().inject(obj);
                     obj.init(zhub);
-                    resourceFactory.register(zhub.get("name"), aClass, obj);
+                    resourceFactory.register(zhub.get("name"), clazz, obj);
                 } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException e) {
                     e.printStackTrace();
                 }
