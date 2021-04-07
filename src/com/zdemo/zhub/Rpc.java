@@ -8,7 +8,7 @@ public class Rpc<T> {
     private String topic;   // call topic
     private T value;        // call paras
 
-    private RpcResponse response;
+    private RpcResult rpcResult;
 
     public Rpc() {
     }
@@ -43,12 +43,13 @@ public class Rpc<T> {
         this.value = value;
     }
 
-    public <R> RpcResponse<R> getResponse() {
-        return response;
+    @ConvertColumn(ignore = true)
+    public RpcResult getRpcResult() {
+        return rpcResult;
     }
 
-    public void setResponse(RpcResponse response) {
-        this.response = response;
+    public void setRpcResult(RpcResult rpcResult) {
+        this.rpcResult = rpcResult;
     }
 
     @ConvertColumn(ignore = true)
@@ -56,50 +57,32 @@ public class Rpc<T> {
         return ruk.split("::")[0];
     }
 
-    public <R> RpcResponse<R> buildResp() {
-        RpcResponse<R> response = new RpcResponse<>();
+    public <R> RpcResult<R> buildResp() {
+        RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         return response;
     }
 
-    public <R> RpcResponse<R> buildResp(int retcode, String retinfo) {
-        RpcResponse<R> response = new RpcResponse<>();
+    public <R> RpcResult<R> buildResp(int retcode, String retinfo) {
+        RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         response.setRetcode(retcode);
         response.setRetinfo(retinfo);
         return response;
     }
 
-    public <R> RpcResponse<R> buildError(String retinfo) {
-        RpcResponse<R> response = new RpcResponse<>();
+    public <R> RpcResult<R> buildError(String retinfo) {
+        RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         response.setRetcode(100);
         response.setRetinfo(retinfo);
         return response;
     }
 
-    public <R> RpcResponse<R> buildResp(R result) {
-        RpcResponse<R> response = new RpcResponse<>();
+    public <R> RpcResult<R> buildResp(R result) {
+        RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         response.setResult(result);
         return response;
-    }
-
-    @ConvertColumn(ignore = true)
-    public int getRetcode() {
-        if (this.response == null) {
-            return -1;
-        }
-
-        return response.getRetcode();
-    }
-
-    @ConvertColumn(ignore = true)
-    public String getRetinfo() {
-        if (this.response == null) {
-            return "";
-        }
-
-        return response.getRetinfo();
     }
 }
