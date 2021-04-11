@@ -289,6 +289,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private String toStr(Object v) {
         if (v instanceof String) {
             return (String) v;
+        } else if (v == null) {
+            return null;
         }
         return convert.convertTo(v);
     }
@@ -481,7 +483,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             try {
                 publish(topic, rpc);
                 synchronized (rpc) {
-                    rpc.wait();
+                    rpc.wait(); //todo: 调用超时处理
                     rpcMap.remove(ruk);
                 }
             } catch (InterruptedException e) {
@@ -531,7 +533,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 // 参数转换
                 T paras = convert.convertFrom(typeToken.getType(), (String) rpc.getValue());
                 rpc.setValue(paras);
-                RpcResult<R> result = fun.apply(rpc);
+                RpcResult result = fun.apply(rpc);
+                result.setResult(toStr(result.getResult()));
                 publish(rpc.getBackTopic(), result);
             } catch (Exception e) {
                 logger.log(Level.WARNING, "rpc call consumer error: " + v, e);
