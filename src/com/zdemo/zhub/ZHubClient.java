@@ -361,8 +361,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     }
 
     // 发送 publish 主题消息，若多次发送的 topic + "-" + value 相同，将会做延时重置
-    public void delay(String topic, Object v, int delay) {
-        send("delay", topic, toStr(v), String.valueOf(delay));
+    public void delay(String topic, Object v, long millis) {
+        send("delay", topic, toStr(v), String.valueOf(millis));
     }
 
     // 表达式支持：d+[d,H,m,s]
