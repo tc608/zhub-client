@@ -2,7 +2,6 @@ package com.zdemo.test;
 
 import com.zdemo.Event;
 import com.zdemo.IProducer;
-import com.zdemo.zhub.Lock;
 import org.junit.Test;
 import org.redkale.boot.Application;
 import org.redkale.convert.json.JsonConvert;
@@ -12,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 
@@ -47,7 +45,7 @@ public class AppTest {
             //consumer.delay("a", "1", 200);
             consumer.delay("a", "1", "2000");*/
 
-            Consumer<String> con = x -> {
+            /*Consumer<String> con = x -> {
                 logger.info("--->开始申请锁:" + System.currentTimeMillis());
                 Lock lock = consumer.tryLock("a", 20);
                 logger.info("===>成功申请锁:" + System.currentTimeMillis());
@@ -64,7 +62,7 @@ public class AppTest {
 
             new Thread(() -> con.accept("x")).start();
             new Thread(() -> con.accept("y")).start();
-            new Thread(() -> con.accept("z")).start();
+            new Thread(() -> con.accept("z")).start();*/
 
 
             Thread.sleep(60_000 * 60);
