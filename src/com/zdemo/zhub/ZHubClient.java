@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -58,8 +59,9 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
     };
 
-    private static boolean isFirst = true;
-    private boolean isMain = false;
+    /*private static boolean isFirst = true;
+    private boolean isMain = false;*/
+    private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
 
     @Override
     public void init(AnyValue config) {
@@ -75,9 +77,12 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
 
         // 设置第一个启动的 实例为主实例
-        if (isFirst) {
+        /*if (isFirst) {
             isMain = true;
             isFirst = false;
+        }*/
+        if (!mainHub.containsKey(host + ":" + port)) { // 确保同步执行此 init 逻辑
+            mainHub.put(host + ":" + port, this);
         }
 
         if (!initSocket(0)) {
@@ -312,7 +317,9 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 send("groupid " + groupid);
 
                 StringBuffer buf = new StringBuffer("subscribe lock");
-                if (isMain) { // TODO:
+                /*if (isMain) {
+                }*/
+                if (mainHub.containsValue(this)) {
                     buf.append(" " + APP_NAME);
                 }
                 for (String topic : getTopics()) {
