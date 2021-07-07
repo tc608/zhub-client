@@ -26,11 +26,11 @@ public class AppTest {
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            /*consumer.subscribe("a", str -> {
+            consumer.subscribe("a", str -> {
                 logger.info("我收到了消息 a 事件：" + str);
             });
 
-            consumer.timer("a", () -> {
+            /*consumer.timer("a", () -> {
                 System.out.println(Utility.now() + " timer a 执行了");
                 try {
                     Thread.sleep(3000);
