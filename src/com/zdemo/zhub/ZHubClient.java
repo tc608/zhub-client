@@ -95,6 +95,13 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     }
 
                     String type = "";
+
+                    // +ping
+                    if ("+ping".equals(readLine)) {
+                        send("+pong");
+                        continue;
+                    }
+
                     // 主题订阅消息
                     if ("*3".equals(readLine)) {
                         readLine = reader.readLine(); // $7 len()
