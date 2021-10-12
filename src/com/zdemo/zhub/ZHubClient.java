@@ -506,6 +506,11 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     @Comment("rpc call")
     public <T, R> RpcResult<R> rpc(String topic, T v, TypeToken<R> typeToken) {
+        return rpc(topic, v, typeToken, 0);
+    }
+
+    @Comment("rpc call")
+    public <T, R> RpcResult<R> rpc(String topic, T v, TypeToken<R> typeToken, long timeout) {
         Rpc rpc = new Rpc<>(APP_NAME, Utility.uuid(), topic, v);
         String ruk = rpc.getRuk();
         rpcMap.put(ruk, rpc);
@@ -513,14 +518,29 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             rpcRetType.put(ruk, typeToken);
         }
         try {
-            publish(topic, rpc);
+            publish(topic, rpc); // send("rpc", topic, toStr(rpc));
             synchronized (rpc) {
-                rpc.wait(); //todo: 调用超时处理
+                if (timeout <= 0) {
+                    timeout = 1000 * 15;
+                }
+                // call timeout default: 15s
+                Delays.addDelay(timeout, () -> {
+                    RpcResult rpcResult = rpc.buildResp(505, "请求超时");
+                    rpc.setRpcResult(rpcResult);
+                    synchronized (rpc) {
+                        logger.warning("rpc timeout: " + convert.convertTo(rpc));
+                        rpc.notify();
+                    }
+                });
+
+                rpc.wait();
                 rpcMap.remove(ruk);
             }
         } catch (InterruptedException e) {
             e.printStackTrace();
-            // todo: 设置请求失败
+            // call error
+            RpcResult rpcResult = rpc.buildResp(501, "请求失败");
+            rpc.setRpcResult(rpcResult);
         }
         return rpc.getRpcResult();
     }
@@ -531,6 +551,14 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     public <T, R> CompletableFuture<RpcResult<R>> rpcAsync(String topic, T v, TypeToken<R> typeToken) {
         return CompletableFuture.supplyAsync(() -> rpc(topic, v, typeToken));
+    }
+
+    public <T, R> CompletableFuture<RpcResult<R>> rpcAsync(String topic, T v, long timeout) {
+        return CompletableFuture.supplyAsync(() -> rpc(topic, v, null, timeout));
+    }
+
+    public <T, R> CompletableFuture<RpcResult<R>> rpcAsync(String topic, T v, TypeToken<R> typeToken, long timeout) {
+        return CompletableFuture.supplyAsync(() -> rpc(topic, v, typeToken, timeout));
     }
 
     // RpcResult: {ruk:xxx-xxxx, retcode:0}

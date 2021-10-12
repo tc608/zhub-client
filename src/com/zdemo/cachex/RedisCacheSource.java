@@ -2218,7 +2218,7 @@ abstract class ReplyCompletionHandler implements CompletionHandler<Integer, Byte
             out.removeLastByte();//读掉 \r
             //buffer.get();//读掉 \n
             //logger.info("打印buffer.get()---> " + buffer.get());
-            logger.info("--- 打印buffer start --- ");
+            //logger.info("--- 打印buffer start --- ");
             return;//传null则表示使用StandardCharsets.UTF_8
         }
         if (has) out.write(lasted);
