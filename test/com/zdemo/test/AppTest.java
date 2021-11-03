@@ -2,6 +2,8 @@ package com.zdemo.test;
 
 import com.zdemo.Event;
 import com.zdemo.IProducer;
+import com.zdemo.zhub.Delays;
+import net.tccn.timer.Timers;
 import org.junit.Test;
 import org.redkale.boot.Application;
 import org.redkale.convert.json.JsonConvert;
@@ -9,10 +11,13 @@ import org.redkale.convert.json.JsonConvert;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.DelayQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 消息发布订阅测试
@@ -23,10 +28,15 @@ public class AppTest {
     @Test
     public void runConsumer() {
         try {
+            // String str = ", response = {\"success\":true,\"retcode\":0,\"result\":{\"age\":0,\"explevel\":1,\"face\":\"https://aimg.woaihaoyouxi.com/haogame/202106/pic/20210629095545FmGt-v9NYqyNZ_Q6_y3zM_RMrDgd.jpg\",\"followed\":0,\"gender\":0,\"idenstatus\":0,\"matchcatelist\":[{\"catename\":\"足球\",\"catepic\":\"https://aimg.woaihaoyouxi.com/haogame/202107/pic/20210714103556FoG5ICf_7BFx6Idyo3TYpJQ7tmfG.png\",\"matchcateid\":1},{\"catename\":\"篮球\",\"catepic\":\"https://aimg.woaihaoyouxi.com/haogame/202107/pic/20210714103636FklsXTn1f6Jlsam8Jk-yFB7Upo3C.png\",\"matchcateid\":2}],\"matchcates\":\"2,1\",\"mobile\":\"18515190967\",\"regtime\":1624931714781,\"sessionid\":\"d1fc447753bd4700ad29674a753030fa\",\"status\":10,\"userid\":100463,\"username\":\"绝尘\",\"userno\":100463}}";
+            String str = "hello你好";
+
+            System.out.println(str.length());
+
             //启动并开启消费监听
             MyConsumer consumer = Application.singleton(MyConsumer.class);
 
-            consumer.subscribe("a", str -> {
+            consumer.subscribe("a", strx -> {
                 logger.info("我收到了消息 a 事件：" + str);
             });
 
@@ -333,5 +343,108 @@ public class AppTest {
         Event of = Event.of("A", Map.of("b", 1));
 
         System.out.println(JsonConvert.root().convertTo(of));
+
+        String str = "❦别人家的女娃子🤞🏻ꚢ";
+
+        /*
+        System.out.println("别人家的女娃子🤞🏻".length());*/
+        System.out.println(strLength(str));
+        System.out.println(getWordCount(str));
+        /*try {
+            System.out.println("别人家的女娃子🤞🏻".getBytes("UTF-8").length);
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+        System.out.println("系统默认编码方式：" + System.getProperty("file.encoding"));*/
+    }
+
+
+    public static int strLength(String value) {
+        int valueLength = 0;
+        String chinese = "[\u4e00-\u9fa5]";
+        for (int i = 0; i < value.length(); i++) {
+            String temp = value.substring(i, i + 1);
+            if (temp.matches(chinese)) {
+                valueLength += 2;
+            } else {
+                valueLength += 1;
+            }
+        }
+        return valueLength;
+    }
+
+    public int getWordCount(String str) {
+        str = str.replaceAll("[^\\x00-\\xff]", "*");
+        return str.length();
+    }
+
+    @Test
+    public void delay() {
+        DelayQueue<Delays> delayQueue = new DelayQueue<>();
+
+        logger.info("加入延时任务1");
+        delayQueue.add(new Delays(5000, () -> {
+            logger.info("任务1 延时任务执行了!");
+        }));
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        logger.info("加入延时任务2");
+        delayQueue.add(new Delays(5000, () -> {
+            logger.info("任务2 延时任务执行了!");
+        }));
+
+        try {
+            while (true) {
+                Delays delay = delayQueue.take();
+
+                delay.run();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void regTest() {
+        // 按指定模式在字符串查找
+        String line = "This order was placed for QT3000! OK?";
+        String pattern = "(\\D*)(\\d+)(.*)";
+
+        // 创建 Pattern 对象
+        Pattern r = Pattern.compile(pattern);
+
+        // 现在创建 matcher 对象
+        Matcher m = r.matcher(line);
+        if (m.find()) {
+            System.out.println("Found value: " + m.group(0));
+            System.out.println("Found value: " + m.group(1));
+            System.out.println("Found value: " + m.group(2));
+            System.out.println("Found value: " + m.group(3));
+        } else {
+            System.out.println("NO MATCH");
+        }
+    }
+
+    @Test
+    public void timersTest() {
+        Timers.tryDelay(() -> {
+            logger.info("xx:" + System.currentTimeMillis());
+            return true;
+        }, 1000, 5);
+
+        Timers.delay(() -> {
+            System.out.println("11");
+        }, 3000);
+
+        try {
+            Thread.sleep(100000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }

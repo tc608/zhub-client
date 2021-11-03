@@ -4,6 +4,7 @@ import com.zdemo.AbstractConsumer;
 import com.zdemo.Event;
 import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
+import net.tccn.timer.Timers;
 import org.redkale.service.Service;
 import org.redkale.util.*;
 
@@ -524,14 +525,19 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     timeout = 1000 * 15;
                 }
                 // call timeout default: 15s
-                Delays.addDelay(timeout, () -> {
-                    RpcResult rpcResult = rpc.buildResp(505, "请求超时");
-                    rpc.setRpcResult(rpcResult);
+                Timers.delay(() -> {
                     synchronized (rpc) {
+                        Rpc rpc1 = rpcMap.get(ruk);
+                        if (rpc1 == null) {
+                            return;
+                        }
+
+                        RpcResult rpcResult = rpc.buildResp(505, "请求超时");
+                        rpc.setRpcResult(rpcResult);
                         logger.warning("rpc timeout: " + convert.convertTo(rpc));
                         rpc.notify();
                     }
-                });
+                }, timeout);
 
                 rpc.wait();
                 rpcMap.remove(ruk);
@@ -568,7 +574,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }.getType(), value);
 
         String ruk = resp.getRuk();
-        Rpc rpc = rpcMap.get(ruk);
+        Rpc rpc = rpcMap.remove(ruk);
         if (rpc == null) {
             return;
         }
