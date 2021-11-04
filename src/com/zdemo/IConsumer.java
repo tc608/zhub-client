@@ -5,10 +5,6 @@ import org.redkale.util.TypeToken;
 import java.util.function.Consumer;
 
 public interface IConsumer {
-    TypeToken<String> TYPE_TOKEN_STRING = new TypeToken<String>() {
-    };
-    TypeToken<Integer> TYPE_TOKEN_INT = new TypeToken<Integer>() {
-    };
 
     /**
      * 取消订阅
