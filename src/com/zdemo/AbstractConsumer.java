@@ -61,7 +61,7 @@ public abstract class AbstractConsumer implements IConsumer {
     protected abstract void subscribe(String topic);
 
     public void subscribe(String topic, Consumer<String> consumer) {
-        subscribe(topic, TYPE_TOKEN_STRING, consumer);
+        subscribe(topic, IType.STRING, consumer);
     }
 
     @Override

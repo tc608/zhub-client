@@ -1,6 +1,6 @@
 package com.zdemo.test;
 
-import com.zdemo.IConsumer;
+import com.zdemo.IType;
 import com.zdemo.zhub.RpcResult;
 import com.zdemo.zhub.ZHubClient;
 import org.redkale.net.http.RestMapping;
@@ -91,12 +91,12 @@ public class HelloService implements Service {
             //System.out.println(x.getResult().get("v"));
         }
 
-        return zhub.rpc("x", v, IConsumer.TYPE_TOKEN_STRING);
+        return zhub.rpc("x", v, IType.STRING);
     }
 
     @RestMapping
     public RpcResult<String> d(String v) {
-        RpcResult<String> rpc = zhub.rpc("x", v, IConsumer.TYPE_TOKEN_STRING);
+        RpcResult<String> rpc = zhub.rpc("x", v, IType.STRING);
         return rpc;
     }
 
