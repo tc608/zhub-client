@@ -226,7 +226,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                         continue;
                     }
                     //if (event)
-                    logger.info(String.format("rpc-back:[%s]: %s", event.topic, event.value));
+                    logger.finest(String.format("rpc-back:[%s]: %s", event.topic, event.value));
                     rpcAccept(event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -244,7 +244,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     if ((event = rpcCallQueue.take()) == null) {
                         continue;
                     }
-                    logger.info(String.format("rpc-call:[%s] %s", event.topic, event.value));
+                    logger.finest(String.format("rpc-call:[%s] %s", event.topic, event.value));
                     accept(event.topic, event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -359,9 +359,9 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     send("timer", name);
                 });
                 if (retry > 0) {
-                    logger.log(Level.WARNING, String.format("ZHubClient[%s][%s] %s Succeed！", getGroupid(), i + 1, retry > 0 ? "reconnection" : "init"));
+                    logger.warning(String.format("ZHubClient[%s][%s] %s Succeed！", getGroupid(), i + 1, retry > 0 ? "reconnection" : "init"));
                 } else {
-                    logger.log(Level.FINE, String.format("ZHubClient[%s] %s Succeed！", getGroupid(), retry > 0 ? "reconnection" : "init"));
+                    logger.fine(String.format("ZHubClient[%s] %s Succeed！", getGroupid(), retry > 0 ? "reconnection" : "init"));
                 }
                 return true;
             } catch (Exception e) {
