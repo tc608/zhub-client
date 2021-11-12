@@ -4,9 +4,9 @@ import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -20,7 +20,7 @@ public abstract class AbstractConsumer implements IConsumer {
     @Resource(name = "APP_NAME")
     protected String APP_NAME = "";
 
-    private Map<String, EventType> eventMap = new HashMap<>();
+    private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
 
     protected abstract String getGroupid();
 
