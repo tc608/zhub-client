@@ -8,7 +8,6 @@ import net.tccn.timer.Timers;
 import org.redkale.service.Service;
 import org.redkale.util.*;
 
-import javax.annotation.Resource;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -33,14 +32,8 @@ import java.util.logging.Logger;
 public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
-
-    @Resource(name = "property.zhub.host")
     private String addr = "127.0.0.1:1216";
-    @Resource(name = "property.zhub.password")
-    private String password = "";
-    /*@Resource(name = "property.zhub.port")
-    private int port = 1216;*/
-    @Resource(name = "property.zhub.groupid")
+    //private String password = "";
     private String groupid = "";
 
     //private ReentrantLock lock = new ReentrantLock();
