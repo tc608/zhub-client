@@ -35,11 +35,11 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
 
     @Resource(name = "property.zhub.host")
-    private String host = "127.0.0.1";
+    private String addr = "127.0.0.1:1216";
     @Resource(name = "property.zhub.password")
     private String password = "";
-    @Resource(name = "property.zhub.port")
-    private int port = 1216;
+    /*@Resource(name = "property.zhub.port")
+    private int port = 1216;*/
     @Resource(name = "property.zhub.groupid")
     private String groupid = "";
 
@@ -72,8 +72,14 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
         // 自动注入
         if (config != null) {
-            host = config.getValue("addr", host);
-            port = config.getIntValue("port", port);
+            addr = config.getValue("addr", addr);
+
+            // 合并 addr = host:port, 做历史兼容
+            int port = config.getIntValue("port", 0);
+            if (port != 0 && !addr.contains(":")) {
+                addr = addr + ":" + port;
+            }
+
             groupid = config.getValue("groupid", groupid);
         }
 
@@ -82,8 +88,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             isMain = true;
             isFirst = false;
         }*/
-        if (!mainHub.containsKey(host + ":" + port)) { // 确保同步执行此 init 逻辑
-            mainHub.put(host + ":" + port, this);
+        if (!mainHub.containsKey(addr)) { // 确保同步执行此 init 逻辑
+            mainHub.put(addr, this);
         }
 
         if (!initSocket(0)) {
@@ -330,6 +336,10 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     protected boolean initSocket(int retry) {
         for (int i = 0; i <= retry; i++) {
             try {
+                String[] hostPort = addr.split(":");
+                String host = hostPort[0];
+                int port = Integer.parseInt(hostPort[1]);
+
                 client = new Socket();
                 client.connect(new InetSocketAddress(host, port));
                 client.setKeepAlive(true);
