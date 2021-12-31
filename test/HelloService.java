@@ -58,6 +58,4 @@ public class HelloService {
 
     /*RpcResult<FileToken> x = zhub.rpc("rpc:file:up-token", Map.of(), new TypeToken<>() {
             });*/
-
-
 }
