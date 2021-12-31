@@ -1,13 +1,19 @@
 package com.zdemo.zhub;
 
-import org.redkale.convert.ConvertColumn;
-import org.redkale.convert.json.JsonConvert;
+import com.google.gson.Gson;
+import com.google.gson.annotations.Expose;
 
 public class Rpc<T> {
+    /*public final static Gson gson = new GsonBuilder()
+            .excludeFieldsWithoutExposeAnnotation()
+            .create();*/
+    public final static Gson gson = new Gson();
+
     private String ruk;     // request unique key:
     private String topic;   // call topic
     private T value;        // call paras
 
+    @Expose(deserialize = false, serialize = false)
     private RpcResult rpcResult;
 
     public Rpc() {
@@ -16,7 +22,7 @@ public class Rpc<T> {
     public Rpc(String appname, String ruk, String topic, Object value) {
         this.ruk = appname + "::" + ruk;
         this.topic = topic;
-        this.value = (T) JsonConvert.root().convertTo(value);
+        this.value = (T) gson.toJson(value);
     }
 
     public String getRuk() {
@@ -43,7 +49,7 @@ public class Rpc<T> {
         this.value = value;
     }
 
-    @ConvertColumn(ignore = true)
+
     public RpcResult getRpcResult() {
         return rpcResult;
     }
@@ -52,7 +58,6 @@ public class Rpc<T> {
         this.rpcResult = rpcResult;
     }
 
-    @ConvertColumn(ignore = true)
     public String getBackTopic() {
         return ruk.split("::")[0];
     }

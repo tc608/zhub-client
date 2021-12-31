@@ -1,12 +1,14 @@
 package com.zdemo.zhub;
 
+import com.google.gson.reflect.TypeToken;
 import com.zdemo.AbstractConsumer;
 import com.zdemo.Event;
 import com.zdemo.IConsumer;
 import com.zdemo.IProducer;
 import net.tccn.timer.Timers;
-import org.redkale.service.Service;
-import org.redkale.util.*;
+import org.redkale.util.AnyValue;
+import org.redkale.util.Comment;
+import org.redkale.util.Utility;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,10 +17,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -28,8 +27,8 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-@AutoLoad(value = false)
-public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
+
+public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
     private String addr = "127.0.0.1:1216";
@@ -57,7 +56,13 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private boolean isMain = false;*/
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
 
-    @Override
+    public ZHubClient(String addr, String groupid, String appname) {
+        this.addr = addr;
+        this.groupid = groupid;
+        this.APP_NAME = appname;
+        init(null);
+    }
+
     public void init(AnyValue config) {
         if (!preInit()) {
             return;
@@ -225,7 +230,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                         continue;
                     }
                     //if (event)
-                    logger.finest(String.format("rpc-back:[%s]: %s", event.topic, event.value));
+                    logger.info(String.format("rpc-back:[%s]: %s", event.topic, event.value));
                     rpcAccept(event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -243,7 +248,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     if ((event = rpcCallQueue.take()) == null) {
                         continue;
                     }
-                    logger.finest(String.format("rpc-call:[%s] %s", event.topic, event.value));
+                    logger.info(String.format("rpc-call:[%s] %s", event.topic, event.value));
                     accept(event.topic, event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -323,7 +328,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         } else if (v == null) {
             return null;
         }
-        return convert.convertTo(v);
+
+        return gson.toJson(v);
     }
 
     protected boolean initSocket(int retry) {
@@ -449,7 +455,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private Map<String, Lock> lockTag = new ConcurrentHashMap<>();
 
     public Lock tryLock(String key, int duration) {
-        String uuid = Utility.uuid();
+        String uuid = UUID.randomUUID().toString().replaceAll("-", "");
         Lock lock = new Lock(key, uuid, duration, this);
         lockTag.put(uuid, lock);
 
@@ -503,12 +509,12 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private static Map<String, Rpc> rpcMap = new ConcurrentHashMap<>();
     private static Map<String, TypeToken> rpcRetType = new ConcurrentHashMap<>();
 
-    @Comment("rpc call")
+    // rpc call
     public RpcResult<Void> rpc(String topic, Object v) {
         return rpc(topic, v, null);
     }
 
-    @Comment("rpc call")
+    // rpc call
     public <T, R> RpcResult<R> rpc(String topic, T v, TypeToken<R> typeToken) {
         return rpc(topic, v, typeToken, 0);
     }
@@ -537,7 +543,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
                         RpcResult rpcResult = rpc.buildResp(505, "请求超时");
                         rpc.setRpcResult(rpcResult);
-                        logger.warning("rpc timeout: " + convert.convertTo(rpc));
+                        logger.warning("rpc timeout: " + gson.toJson(rpc));
                         rpc.notify();
                     }
                 }, timeout);
@@ -571,10 +577,10 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     }
 
     // RpcResult: {ruk:xxx-xxxx, retcode:0}
-    @Comment("rpc call back consumer")
+    // rpc call back consumer
     private void rpcAccept(String value) {
-        RpcResult resp = convert.convertFrom(new TypeToken<RpcResult<String>>() {
-        }.getType(), value);
+        RpcResult resp = gson.fromJson(value, new TypeToken<RpcResult<String>>() {
+        }.getType());
 
         String ruk = resp.getRuk();
         Rpc rpc = rpcMap.remove(ruk);
@@ -585,7 +591,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
         Object result = resp.getResult();
         if (result != null && typeToken != null && !"java.lang.String".equals(typeToken.getType().getTypeName())) {
-            result = convert.convertFrom(typeToken.getType(), (String) resp.getResult());
+            result = gson.fromJson((String) resp.getResult(), typeToken.getType());
         }
 
         resp.setResult(result);
@@ -598,16 +604,16 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     // -- 订阅端 --
     private Set<String> rpcTopics = new HashSet();
 
-    @Comment("rpc call consumer")
+    // rpc call consumer
     public <T, R> void rpcSubscribe(String topic, TypeToken<T> typeToken, Function<Rpc<T>, RpcResult<R>> fun) {
         Consumer<String> consumer = v -> {
             Rpc<T> rpc = null;
             try {
-                rpc = convert.convertFrom(new TypeToken<Rpc<String>>() {
-                }.getType(), v);
+                rpc = gson.fromJson(v, new TypeToken<Rpc<String>>() {
+                }.getType());
 
                 // 参数转换
-                T paras = convert.convertFrom(typeToken.getType(), (String) rpc.getValue());
+                T paras = gson.fromJson((String) rpc.getValue(), typeToken.getType());
                 rpc.setValue(paras);
                 RpcResult result = fun.apply(rpc);
                 result.setResult(toStr(result.getResult()));

@@ -1,6 +1,7 @@
 package com.zdemo;
 
-import org.redkale.util.TypeToken;
+
+import com.google.gson.reflect.TypeToken;
 
 import java.util.function.Consumer;
 

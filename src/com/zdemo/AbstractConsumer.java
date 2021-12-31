@@ -1,12 +1,12 @@
 package com.zdemo;
 
-import org.redkale.convert.json.JsonConvert;
-import org.redkale.util.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.zdemo.zhub.Rpc;
 
-import javax.annotation.Resource;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -15,12 +15,12 @@ import java.util.function.Consumer;
  */
 public abstract class AbstractConsumer implements IConsumer {
 
-    protected JsonConvert convert = JsonConvert.root();
+    public Gson gson = Rpc.gson;
 
-    @Resource(name = "APP_NAME")
+    // @Resource(name = "APP_NAME")
     protected String APP_NAME = "";
 
-    private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
+    private Map<String, EventType> eventMap = new HashMap<>();
 
     protected abstract String getGroupid();
 
@@ -43,7 +43,7 @@ public abstract class AbstractConsumer implements IConsumer {
         if ("java.lang.String".equals(eventType.typeToken.getType().getTypeName())) {
             data = value;
         } else {
-            data = convert.convertFrom(eventType.typeToken.getType(), value);
+            data = gson.fromJson(value, eventType.typeToken.getType());
         }
 
         eventType.accept(data);
@@ -61,7 +61,7 @@ public abstract class AbstractConsumer implements IConsumer {
     protected abstract void subscribe(String topic);
 
     public void subscribe(String topic, Consumer<String> consumer) {
-        subscribe(topic, IType.STRING, consumer);
+        subscribe(topic, TYPE_TOKEN_STRING, consumer);
     }
 
     @Override
