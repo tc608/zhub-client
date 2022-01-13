@@ -420,11 +420,21 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
 
         switch (endchar) {
-            case "M" -> delay *= (1000 * 60 * 60 * 24 * 30);
-            case "d" -> delay *= (1000 * 60 * 60 * 24);
-            case "H" -> delay *= (1000 * 60 * 60);
-            case "m" -> delay *= (1000 * 60);
-            case "s" -> delay *= 1000;
+            case "M":
+                delay *= (1000 * 60 * 60 * 24 * 30);
+                break;
+            case "d":
+                delay *= (1000 * 60 * 60 * 24);
+                break;
+            case "H":
+                delay *= (1000 * 60 * 60);
+                break;
+            case "m":
+                delay *= (1000 * 60);
+                break;
+            case "s":
+                delay *= 1000;
+                break;
         }
 
         delay(topic, v, delay);

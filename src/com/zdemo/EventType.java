@@ -10,7 +10,7 @@ public class EventType<T> {
     public final TypeToken<T> typeToken;
     private final Consumer<T> consumer;
 
-    private final static TypeToken<String> stringToken = new TypeToken<>() {
+    private final static TypeToken<String> stringToken = new TypeToken<String>() {
     };
 
     private EventType(String topic, TypeToken<T> typeToken, Consumer<T> consumer) {

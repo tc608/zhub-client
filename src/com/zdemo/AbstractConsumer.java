@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import com.zdemo.zhub.Rpc;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -32,8 +33,10 @@ public abstract class AbstractConsumer implements IConsumer {
         if (!eventMap.isEmpty()) {
             return eventMap.keySet();
         }
+        HashSet<String> set = new HashSet<>();
+        set.add("-");
 
-        return Set.of("-");
+        return set;
     }
 
     protected void accept(String topic, String value) {

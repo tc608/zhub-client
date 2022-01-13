@@ -7,15 +7,15 @@ import java.util.Map;
 
 public interface IType {
 
-    TypeToken<String> STRING = new TypeToken<>() {
+    TypeToken<String> STRING = new TypeToken<String>() {
     };
 
-    TypeToken<Integer> INT = new TypeToken<>() {
+    TypeToken<Integer> INT = new TypeToken<Integer>() {
     };
 
-    TypeToken<Map<String, String>> MAP = new TypeToken<>() {
+    TypeToken<Map<String, String>> MAP = new TypeToken<Map<String, String>>() {
     };
 
-    TypeToken<List<Map<String, String>>> LMAP = new TypeToken<>() {
+    TypeToken<List<Map<String, String>>> LMAP = new TypeToken<List<Map<String, String>>>() {
     };
 }
