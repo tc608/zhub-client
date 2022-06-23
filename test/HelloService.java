@@ -13,7 +13,7 @@ public class HelloService {
     @Before
     public void init() {
 
-        zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL");
+        zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL", "zchd@123456");
         //zhub.init(Map.of("host", "47.111.150.118", "port", "6066", "groupid", "g-dev", "appname", "DEV-LOCAL"));
 
         // Function<Rpc<T>, RpcResult<R>> fun
