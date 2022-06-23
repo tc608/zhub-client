@@ -4,7 +4,7 @@
 
     <zhubs>
         <!--<zhub name="zhub" addr="47.111.150.118" port="6066" groupid="group-zhub"/>-->
-        <zhub name="zhub" addr="127.0.0.1:1216" groupid="group-zhub"/>
+        <zhub name="zhub" addr="127.0.0.1:1216" groupid="group-zhub" auth="zchd@123456"/>
     </zhubs>
 
     <resources>

@@ -33,7 +33,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
     private String addr = "127.0.0.1:1216";
-    //private String password = "";
+    private String auth = "";
     private String groupid = "";
 
     //private ReentrantLock lock = new ReentrantLock();
@@ -73,6 +73,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 addr = addr + ":" + port;
             }
 
+            auth = config.getOrDefault("auth", auth);
             groupid = config.getValue("groupid", groupid);
         }
 
@@ -169,7 +170,10 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                         String topic = reader.readLine(); // name
 
                         timerQueue.add(timerMap.get(topic));
+                        continue;
                     }
+
+                    logger.finest(readLine);
                 } catch (IOException e) {
                     if (e instanceof SocketException) {
                         initSocket(Integer.MAX_VALUE);
@@ -344,6 +348,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 if (groupid == null || groupid.isEmpty()) {
                     throw new RuntimeException("ZHubClient groupid can not is empty");
                 }
+                send("auth", auth);
                 send("groupid " + groupid);
 
                 StringBuffer buf = new StringBuffer("subscribe lock");
