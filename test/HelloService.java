@@ -1,6 +1,7 @@
-import com.zdemo.IConsumer;
-import com.zdemo.zhub.RpcResult;
-import com.zdemo.zhub.ZHubClient;
+import com.google.gson.reflect.TypeToken;
+import net.tccn.IType;
+import net.tccn.zhub.RpcResult;
+import net.tccn.zhub.ZHubClient;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -13,8 +14,15 @@ public class HelloService {
     @Before
     public void init() {
 
-        zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL", "zchd@123456");
-        //zhub.init(Map.of("host", "47.111.150.118", "port", "6066", "groupid", "g-dev", "appname", "DEV-LOCAL"));
+
+
+        //zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL", "zchd@123456");
+        zhub = new ZHubClient("47.111.150.118:6066", "g-dev", "DEV-LOCAL", "zchd@123456");
+
+        zhub.subscribe("tv:test", x -> {
+            System.out.println(x);
+        });
+        //zhub.init(Kv.of("host", "47.111.150.118", "port", "6066", "groupid", "g-dev", "appname", "DEV-LOCAL"));
 
         // Function<Rpc<T>, RpcResult<R>> fun
         /*zhub.rpcSubscribe("x", new TypeToken<String>() {
@@ -51,9 +59,22 @@ public class HelloService {
     @Test
     public void rpcTest() {
         //RpcResult<String> rpc = zhub.rpc("wx:users", Map.of("appId", "wxa554ec3ab3bf1fc7"), IConsumer.TYPE_TOKEN_STRING);
-        RpcResult<String> rpc = zhub.rpc("a", "fa", IConsumer.TYPE_TOKEN_STRING);
+        //RpcResult<String> rpc = zhub.rpc("a", "fa", IConsumer.TYPE_TOKEN_STRING);
+        zhub.publish("tv:test", "hello ym!");
 
-        System.out.println(rpc.getResult());
+        zhub.subscribe("tv:abx", x -> {
+            System.out.println(x);
+        });
+
+        zhub.rpcSubscribe("rpc-x", IType.STRING, x -> {
+            return x.buildResp(x.getValue().toUpperCase());
+        });
+
+        try {
+            Thread.sleep(3000 * 30000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /*RpcResult<FileToken> x = zhub.rpc("rpc:file:up-token", Map.of(), new TypeToken<>() {

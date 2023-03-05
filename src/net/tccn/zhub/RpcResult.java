@@ -1,4 +1,4 @@
-package com.zdemo.zhub;
+package net.tccn.zhub;
 
 public class RpcResult<R> {
     private String ruk;

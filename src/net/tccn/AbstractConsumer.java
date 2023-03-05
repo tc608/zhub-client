@@ -1,8 +1,8 @@
-package com.zdemo;
+package net.tccn;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import com.zdemo.zhub.Rpc;
+import net.tccn.zhub.Rpc;
 
 import java.util.HashMap;
 import java.util.HashSet;

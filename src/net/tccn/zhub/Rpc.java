@@ -1,4 +1,4 @@
-package com.zdemo.zhub;
+package net.tccn.zhub;
 
 import com.google.gson.Gson;
 import com.google.gson.annotations.Expose;
