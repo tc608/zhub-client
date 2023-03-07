@@ -373,7 +373,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 }
                 return true;
             } catch (Exception e) {
-                if (retry == 0 || i == 0) {
+                if (i == 0) {
                     logger.log(Level.WARNING, String.format("ZHubClient[%s] %s Failed 初始化失败！", getGroupid(), retry == 0 ? "init" : "reconnection"), e);
                     try {
                         Thread.sleep(1000);
