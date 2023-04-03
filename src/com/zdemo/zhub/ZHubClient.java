@@ -203,6 +203,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             }
         }, 1);
 
+        // topic msg
         threadBuilder.accept(() -> {
             while (true) {
                 Event<String> event = null;
@@ -210,7 +211,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     if ((event = topicQueue.take()) == null) {
                         continue;
                     }
-
+                    logger.log(Level.INFO, "topic[" + event.topic + "] :" + event.value);
                     accept(event.topic, event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -265,6 +266,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     if ((msg = sendMsgQueue.take()) == null) {
                         continue;
                     }
+                    logger.log(Level.FINEST, "send-msg: [" + msg + "]");
                     writer.write(msg.getBytes());
                     writer.flush();
                 } catch (InterruptedException e) {
