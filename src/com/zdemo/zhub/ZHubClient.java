@@ -593,7 +593,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         TypeToken typeToken = rpcRetType.get(ruk);
 
         Object result = resp.getResult();
-        if (result != null && typeToken != null && !"java.lang.String".equals(typeToken.getType().getTypeName())) {
+        if (result != null && typeToken != null && !"java.lang.String".equals(typeToken.getType().getTypeName()) && !"java.lang.Void".equals(typeToken.getType().getTypeName())) {
             result = convert.convertFrom(typeToken.getType(), (String) resp.getResult());
         }
 
