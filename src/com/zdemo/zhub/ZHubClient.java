@@ -1,9 +1,6 @@
 package com.zdemo.zhub;
 
-import com.zdemo.AbstractConsumer;
-import com.zdemo.Event;
-import com.zdemo.IConsumer;
-import com.zdemo.IProducer;
+import com.zdemo.*;
 import net.tccn.timer.Timers;
 import org.redkale.service.Service;
 import org.redkale.util.*;
@@ -609,6 +606,11 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     // -- 订阅端 --
     private Set<String> rpcTopics = new HashSet();
+
+    @Comment("rpc call consumer")
+    public <R> void rpcSubscribe(String topic, Function<Rpc<String>, RpcResult<R>> fun) {
+        rpcSubscribe(topic, IType.STRING, fun);
+    }
 
     @Comment("rpc call consumer")
     public <T, R> void rpcSubscribe(String topic, TypeToken<T> typeToken, Function<Rpc<T>, RpcResult<R>> fun) {
