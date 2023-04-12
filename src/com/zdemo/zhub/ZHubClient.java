@@ -128,6 +128,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             value += s; // value
                         } while (clen > 0 && clen > strLength(value));
 
+                        logger.finest("topic[" + topic + "]: " + value);
 
                         // lock msg
                         if ("lock".equals(topic)) {
@@ -166,6 +167,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                         reader.readLine(); //$n len(key)
                         String topic = reader.readLine(); // name
 
+                        logger.finest("timer[" + topic + "]: ");
                         timerQueue.add(timerMap.get(topic));
                         continue;
                     }
@@ -208,7 +210,6 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     if ((event = topicQueue.take()) == null) {
                         continue;
                     }
-                    logger.log(Level.FINE, "topic[" + event.topic + "] :" + event.value);
                     accept(event.topic, event.value);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -216,7 +217,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                     logger.log(Level.WARNING, "topic[" + event.topic + "] event accept error :" + event.value, e);
                 }
             }
-        }, 1);
+        }, 16);
 
         // rpc back
         threadBuilder.accept(() -> {
