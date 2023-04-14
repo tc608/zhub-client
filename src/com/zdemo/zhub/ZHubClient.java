@@ -504,6 +504,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         send("timer", name);
     }
 
+    @Deprecated
     public void reloadTimer() {
         send("cmd", "reload-timer");
     }
