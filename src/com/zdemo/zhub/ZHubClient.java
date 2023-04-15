@@ -475,6 +475,24 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         return lock;
     }
 
+    // 为替换 tryLock 方法做过度准确
+    public Lock lock(String key, int duration) {
+        String uuid = Utility.uuid();
+        Lock lock = new Lock(key, uuid, duration, this);
+        lockTag.put(uuid, lock);
+
+        try {
+            // c.send("lock", key, uuid, strconv.Itoa(duration))
+            send("lock", key, uuid, String.valueOf(duration));
+            synchronized (lock) {
+                lock.wait();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return lock;
+    }
+
     // ================================================== timer ==================================================
     private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap();
 
