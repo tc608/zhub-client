@@ -1,6 +1,7 @@
 package com.zdemo;
 
 import org.redkale.convert.json.JsonConvert;
+import org.redkale.util.Resourcable;
 import org.redkale.util.TypeToken;
 
 import javax.annotation.Resource;
@@ -13,7 +14,7 @@ import java.util.function.Consumer;
  * @author Liang
  * @data 2020-09-05 23:18
  */
-public abstract class AbstractConsumer implements IConsumer {
+public abstract class AbstractConsumer extends ZhubAgentProvider implements IConsumer, Resourcable {
 
     protected JsonConvert convert = JsonConvert.root();
 
@@ -23,10 +24,6 @@ public abstract class AbstractConsumer implements IConsumer {
     private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
 
     protected abstract String getGroupid();
-
-    protected boolean preInit() {
-        return true;
-    }
 
     protected final Set<String> getTopics() {
         if (!eventMap.isEmpty()) {
@@ -76,4 +73,10 @@ public abstract class AbstractConsumer implements IConsumer {
         }
     }
 
+    // --------------
+
+    @Override
+    public String resourceName() {
+        return super.getName();
+    }
 }

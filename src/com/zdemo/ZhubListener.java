@@ -1,3 +1,4 @@
+/*
 package com.zdemo;
 
 import org.redkale.boot.Application;
@@ -10,11 +11,14 @@ import org.redkale.util.ResourceFactory;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletableFuture;
 
+*/
 /**
  * 服务监听
  *
  * @author: liangxy.
- */
+ *//*
+
+@Deprecated
 public class ZhubListener implements ApplicationListener {
 
     @Override
@@ -47,3 +51,4 @@ public class ZhubListener implements ApplicationListener {
 
     }
 }
+*/

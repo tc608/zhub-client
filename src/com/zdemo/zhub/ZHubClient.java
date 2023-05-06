@@ -2,8 +2,14 @@ package com.zdemo.zhub;
 
 import com.zdemo.*;
 import net.tccn.timer.Timers;
+import org.redkale.annotation.AutoLoad;
+import org.redkale.annotation.ResourceType;
+import org.redkale.service.Local;
 import org.redkale.service.Service;
-import org.redkale.util.*;
+import org.redkale.util.AnyValue;
+import org.redkale.util.Comment;
+import org.redkale.util.TypeToken;
+import org.redkale.util.Utility;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -22,7 +28,9 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-@AutoLoad(value = false)
+@Local
+@AutoLoad(false)
+@ResourceType(ZHubClient.class)
 public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer, Service {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
@@ -47,16 +55,27 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
     };*/
 
-    /*private static boolean isFirst = true;
-    private boolean isMain = false;*/
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
 
     @Override
     public void init(AnyValue config) {
-        if (!preInit()) {
+        /*if (!preInit()) {
+            return;
+        }*/
+
+        if (config == null) {
+            initClient(null);
             return;
         }
 
+        Map<String, AnyValue> nodes = getNodes(config);
+        for (String rsName : nodes.keySet()) {
+            ZHubClient client = new ZHubClient().initClient(nodes.get(rsName));
+            application.getResourceFactory().register(rsName, client);
+        }
+    }
+
+    private ZHubClient initClient(AnyValue config) {
         // 自动注入
         if (config != null) {
             addr = config.getValue("addr", addr);
@@ -72,19 +91,16 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
 
         // 设置第一个启动的 实例为主实例
-        /*if (isFirst) {
-            isMain = true;
-            isFirst = false;
-        }*/
         if (!mainHub.containsKey(addr)) { // 确保同步执行此 init 逻辑
             mainHub.put(addr, this);
         }
 
-        if (!initSocket(0)) {
-            return;
-        }
         // 消息 事件接收
         new Thread(() -> {
+            if (!initSocket(0)) {
+                return;
+            }
+
             while (true) {
                 try {
                     String readLine = reader.readLine();
@@ -289,6 +305,32 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             }
         }).start();
 
+        return this;
+    }
+
+    public boolean acceptsConf(AnyValue config) {
+        if (config == null) {
+            return false;
+        }
+
+        if (!getNodes(config).isEmpty()) {
+            return true;
+        }
+        return false;
+    }
+
+    private HashMap<String, AnyValue> getNodes(AnyValue config) {
+        AnyValue[] zhubs = config.getAnyValues("zhub");
+        HashMap<String, AnyValue> confMap = new HashMap<>();
+
+        for (AnyValue zhub : zhubs) {
+            String[] names = zhub.getNames();
+            for (String name : names) {
+                confMap.put(name, zhub.getAnyValue(name));
+            }
+        }
+
+        return confMap;
     }
 
     // ---------------------
@@ -366,8 +408,6 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 send("groupid " + groupid);
 
                 StringBuffer buf = new StringBuffer("subscribe lock");
-                /*if (isMain) {
-                }*/
                 if (mainHub.containsValue(this)) {
                     buf.append(" " + APP_NAME);
                 }
