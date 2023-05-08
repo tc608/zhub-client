@@ -13,7 +13,7 @@ import org.redkale.util.AnyValue;
 /**
  * @author zhangjx
  */
-@Priority(10001)
+@Priority(1)
 public class RedisCacheSourceProvider implements CacheSourceProvider {
 
     @Override

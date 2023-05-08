@@ -65,13 +65,12 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
         if (config == null) {
             initClient(null);
-            return;
-        }
-
-        Map<String, AnyValue> nodes = getNodes(config);
-        for (String rsName : nodes.keySet()) {
-            ZHubClient client = new ZHubClient().initClient(nodes.get(rsName));
-            application.getResourceFactory().register(rsName, client);
+        } else {
+            Map<String, AnyValue> nodes = getNodes(config);
+            for (String rsName : nodes.keySet()) {
+                ZHubClient client = new ZHubClient().initClient(nodes.get(rsName));
+                application.getResourceFactory().register(rsName, client);
+            }
         }
     }
 
