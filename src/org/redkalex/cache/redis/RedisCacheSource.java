@@ -28,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -147,6 +148,10 @@ public class RedisCacheSource extends AbstractRedisSource {
         int maxconns = conf.getIntValue(CACHE_SOURCE_MAXCONNS, urlmaxconns);
         int pipelines = conf.getIntValue(CACHE_SOURCE_PIPELINES, urlpipelines);
         RedisCacheClient old = this.client;
+
+        if (passwordDecoder != null) {
+            password = passwordDecoder.apply(password);
+        }
         this.client = new RedisCacheClient(resourceName(), ioGroup, resourceName() + "." + db, new ClientAddress(address), maxconns, pipelines,
                 password == null || password.isEmpty() ? null : new RedisCacheReqAuth(password), db > 0 ? new RedisCacheReqDB(db) : null);
         if (old != null) {
@@ -1786,5 +1791,11 @@ public class RedisCacheSource extends AbstractRedisSource {
     @Override
     public <T> Map<String, Collection<T>> getCollectionMap(final boolean set, final Type componentType, String... keys) {
         return (Map) getCollectionMapAsync(set, componentType, keys).join();
+    }
+
+    private static Function<String, String> passwordDecoder = null;
+
+    public static void setPasswordDecoder(Function decoder) {
+        passwordDecoder = decoder;
     }
 }
