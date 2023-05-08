@@ -1,4 +1,4 @@
-package com.zdemo;
+package net.tccn;
 
 import org.redkale.util.TypeToken;
 

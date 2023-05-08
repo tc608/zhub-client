@@ -1,6 +1,6 @@
-package com.zdemo.zhub;
+package net.tccn.zhub;
 
-import com.zdemo.*;
+import net.tccn.*;
 import net.tccn.timer.Timers;
 import org.redkale.annotation.AutoLoad;
 import org.redkale.annotation.ResourceType;

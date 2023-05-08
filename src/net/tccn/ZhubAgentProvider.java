@@ -1,4 +1,4 @@
-package com.zdemo;
+package net.tccn;
 
 import org.redkale.boot.Application;
 import org.redkale.boot.NodeServer;

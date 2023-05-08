@@ -1,4 +1,4 @@
-package com.zdemo.zhub;
+package net.tccn.zhub;
 
 import org.redkale.convert.ConvertColumn;
 import org.redkale.convert.json.JsonConvert;
