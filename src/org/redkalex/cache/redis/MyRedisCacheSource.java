@@ -71,9 +71,9 @@ public class MyRedisCacheSource extends RedisCacheSource {
     }
 
     //--------------------- set ------------------------------
-    /*public <T> void sadd(String key, Collection<T> args) {
+    public <T> void sadd(String key, Collection<T> args) {
         saddAsync(key, args.toArray(Serializable[]::new)).join();
-    }*/
+    }
 
     public void sadd(String key, Serializable... args) {
         saddAsync(key, Arrays.stream(args).toArray(Serializable[]::new)).join();

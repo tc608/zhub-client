@@ -5,7 +5,6 @@ import org.redkale.util.AnyValue;
 import org.redkale.util.ResourceFactory;
 import org.redkalex.cache.redis.MyRedisCacheSource;
 
-import java.awt.*;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
@@ -59,7 +58,8 @@ public class RedisTest {
         List<Integer> list = List.of(2, 3, 5);
         // source.sadd("setx", list.toArray(Integer[]::new));
         source.sadd("setx", list.toArray(Integer[]::new));
-        source.sadd("setx", 12,2312,213);
+        source.sadd("setx", 12, 2312, 213);
+        source.sadd("setx", List.of(1011, 10222));
 
         source.keys("setx*").forEach(x -> {
             System.out.println(x);
