@@ -1,11 +1,8 @@
-package com.zdemo.test;
+package net.tccn.mq;
 
-import com.zdemo.Event;
-import com.zdemo.IProducer;
-import com.zdemo.zhub.Delays;
+import net.tccn.Event;
 import net.tccn.timer.Timers;
 import org.junit.Test;
-import org.redkale.boot.Application;
 import org.redkale.convert.json.JsonConvert;
 
 import java.util.ArrayList;
@@ -32,13 +29,6 @@ public class AppTest {
             String str = "hello你好";
 
             System.out.println(str.length());
-
-            //启动并开启消费监听
-            MyConsumer consumer = Application.singleton(MyConsumer.class);
-
-            consumer.subscribe("a", strx -> {
-                logger.info("我收到了消息 a 事件：" + str);
-            });
 
             /*consumer.timer("a", () -> {
                 System.out.println(Utility.now() + " timer a 执行了");
@@ -83,20 +73,7 @@ public class AppTest {
 
     @Test
     public void runProducer() {
-        try {
-            MyConsumer producer = Application.singleton(MyConsumer.class);
-            for (int i = 0; i < 10_0000; i++) {
-                producer.publish("a-1", i);
-            }
 
-            try {
-                Thread.sleep(1_000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
     }
 
     private static LinkedBlockingQueue<String> queue = new LinkedBlockingQueue();
@@ -148,21 +125,6 @@ public class AppTest {
         System.out.println(fun.toString());
     }
 
-    @Test
-    public void yy() {
-        IProducer producer = null;
-        try {
-            producer = Application.singleton(MyConsumer.class);
-
-            for (int i = 0; i < 100; i++) {
-
-                producer.publish("x", "x");
-                Thread.sleep(1000);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
     // (27+5*23)/(63-59)
     // [27+5*23] [/] [63-59]
@@ -380,10 +342,10 @@ public class AppTest {
 
     @Test
     public void delay() {
-        DelayQueue<Delays> delayQueue = new DelayQueue<>();
+        DelayQueue<com.zdemo.zhub.Delays> delayQueue = new DelayQueue<>();
 
         logger.info("加入延时任务1");
-        delayQueue.add(new Delays(5000, () -> {
+        delayQueue.add(new com.zdemo.zhub.Delays(5000, () -> {
             logger.info("任务1 延时任务执行了!");
         }));
 
@@ -394,13 +356,13 @@ public class AppTest {
         }
 
         logger.info("加入延时任务2");
-        delayQueue.add(new Delays(5000, () -> {
+        delayQueue.add(new com.zdemo.zhub.Delays(5000, () -> {
             logger.info("任务2 延时任务执行了!");
         }));
 
         try {
             while (true) {
-                Delays delay = delayQueue.take();
+                com.zdemo.zhub.Delays delay = delayQueue.take();
 
                 delay.run();
             }

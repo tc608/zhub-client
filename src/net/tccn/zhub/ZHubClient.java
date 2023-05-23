@@ -56,9 +56,14 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     };*/
 
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
+/*
+    public ZHubClient() {
+        logger.info("ZHubClient:" + (application != null ? application.getName() : "NULL"));
+    }*/
 
     @Override
     public void init(AnyValue config) {
+        APP_NAME = application.getName();
         /*if (!preInit()) {
             return;
         }*/
@@ -617,7 +622,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             return;
                         }
 
-                        RpcResult rpcResult = rpc.buildResp(505, "请求超时");
+                        RpcResult rpcResult = rpc.render(505, "请求超时");
                         rpc.setRpcResult(rpcResult);
                         logger.warning("rpc timeout: " + convert.convertTo(rpc));
                         rpc.notify();
@@ -630,7 +635,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         } catch (InterruptedException e) {
             e.printStackTrace();
             // call error
-            RpcResult rpcResult = rpc.buildResp(501, "请求失败");
+            RpcResult rpcResult = rpc.render(501, "请求失败");
             rpc.setRpcResult(rpcResult);
         }
         return rpc.getRpcResult();
@@ -701,7 +706,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 publish(rpc.getBackTopic(), result);
             } catch (Exception e) {
                 logger.log(Level.WARNING, "rpc call consumer error: " + v, e);
-                publish(rpc.getBackTopic(), rpc.buildError("服务调用失败！"));
+                publish(rpc.getBackTopic(), rpc.retError("服务调用失败！"));
             }
             // back
         };

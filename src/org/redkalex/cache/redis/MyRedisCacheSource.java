@@ -20,6 +20,179 @@ public class MyRedisCacheSource extends RedisCacheSource {
     public void init(AnyValue conf) {
         super.init(conf);
     }
+/*
+//--------------------- zset ------------------------------
+
+    public int getZrank(String key, V v) {
+        byte[][] bytes = Stream.of(key, v).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Long t = (Long) send("ZRANK", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        return t == null ? -1 : (int) (long) t;
+    }
+
+    public int getZrevrank(String key, V v) {
+        byte[][] bytes = Stream.of(key, v).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Long t = (Long) send("ZREVRANK", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        return t == null ? -1 : (int) (long) t;
+    }
+
+    //ZRANGE/ZREVRANGE key start stop
+    public List<V> getZset(String key) {
+        byte[][] bytes = Stream.of(key, 0, -1).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List<V> vs = (List<V>) send("ZREVRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        List<V> vs2 = new ArrayList(vs.size());
+
+        for (int i = 0; i < vs.size(); ++i) {
+            if (i % 2 == 1) {
+                vs2.add(this.convert.convertFrom(this.objValueType, String.valueOf(vs.get(i))));
+            } else {
+                vs2.add(vs.get(i));
+            }
+        }
+
+        return vs2;
+    }
+
+    public List<V> getZset(String key, int offset, int limit) {
+        byte[][] bytes = Stream.of(key, offset, offset + limit - 1).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List<V> vs = (List<V>) send("ZREVRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        List<V> vs2 = new ArrayList(vs.size());
+
+        for (int i = 0; i < vs.size(); ++i) {
+            if (i % 2 == 1) {
+                vs2.add(this.convert.convertFrom(this.objValueType, String.valueOf(vs.get(i))));
+            } else {
+                vs2.add(vs.get(i));
+            }
+        }
+
+        return vs2;
+    }
+
+    public LinkedHashMap<V, Long> getZsetLongScore(String key) {
+        LinkedHashMap<V, Double> map = getZsetDoubleScore(key);
+        if (map.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+
+        LinkedHashMap<V, Long> map2 = new LinkedHashMap<>(map.size());
+        map.forEach((k, v) -> map2.put(k, (long) (double) v));
+        return map2;
+    }
+
+    public LinkedHashMap<V, Long> getZsetItemsLongScore(String key) {
+        byte[][] bytes = Stream.of(key, 0, -1, "WITHSCORES").map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List vs = (List) send("ZRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        LinkedHashMap<V, Long> map = new LinkedHashMap<>();
+        for (int i = 0; i < vs.size(); i += 2) {
+            map.put((V) vs.get(i), (long) Double.parseDouble((String) vs.get(i + 1)));
+        }
+        return map;
+    }
+
+    public Long getZsetLongScore(String key, V v) {
+        Double score = getZsetDoubleScore(key, v);
+        if (score == null) {
+            return null;
+        }
+        return (long) (double) score;
+    }
+
+    public LinkedHashMap<V, Double> getZsetDoubleScore(String key) {
+        byte[][] bytes = Stream.of(key, 0, -1, "WITHSCORES").map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List vs = (List) send("ZREVRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        LinkedHashMap<V, Double> map = new LinkedHashMap<>();
+        for (int i = 0; i < vs.size(); i += 2) {
+            map.put((V) vs.get(i), Double.parseDouble((String) vs.get(i + 1)));
+        }
+        return map;
+    }
+
+    public Double getZsetDoubleScore(String key, V v) {
+        byte[][] bytes = Stream.of(key, v).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Serializable zscore = send("ZSCORE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        if (zscore == null) {
+            return null;
+        }
+
+        return Double.parseDouble(String.valueOf(zscore));
+    }
+
+    public LinkedHashMap<V, Long> getZsetLongScore(String key, int offset, int limit) {
+        byte[][] bytes = Stream.of(key, offset, offset + limit - 1, "WITHSCORES").map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List vs = (List) send("ZREVRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        LinkedHashMap<V, Long> map = new LinkedHashMap<>();
+        for (int i = 0; i < vs.size(); i += 2) {
+            map.put((V) vs.get(i), (long) Double.parseDouble((String) vs.get(i + 1)));
+        }
+        return map;
+    }
+
+    public LinkedHashMap<V, Double> getZsetDoubleScore(String key, int offset, int limit) {
+        byte[][] bytes = Stream.of(key, offset, offset + limit - 1, "WITHSCORES").map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        List vs = (List) send("ZREVRANGE", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+
+        LinkedHashMap<V, Double> map = new LinkedHashMap<>();
+        for (int i = 0; i < vs.size(); i += 2) {
+            map.put((V) vs.get(i), Double.parseDouble(vs.get(i + 1) + ""));
+        }
+        return map;
+    }
+* */
+
+    // --------------------
+    public <N extends Number> void zadd(String key, Map<Serializable, N> kv) {
+        if (kv == null || kv.isEmpty()) {
+            return;
+        }
+        List<Serializable> args = new ArrayList();
+        kv.forEach((k, v) -> {
+            args.add(k);
+            args.add(v);
+        });
+
+        sendAsync("ZADD", key, args.toArray(Serializable[]::new)).join();
+    }
+
+    public <N extends Number> double zincr(String key, Serializable number, N n) {
+        return sendAsync("ZINCRBY", key, number, n).thenApply(x -> x.getDoubleValue(0d)).join();
+    }
+
+    public void zrem(String key, Serializable... vs) {
+        sendAsync("ZREM", key, vs).join();
+    }
+
+    /*public <T> List<T> zexists(String key, T... fields) {
+        if (fields == null || fields.length == 0) {
+            return new ArrayList<>();
+        }
+        List<String> para = new ArrayList<>();
+        para.add("" +
+                "   local key = KEYS[1];" +
+                "    local args = ARGV;" +
+                "    local result = {};" +
+                "    for i,v in ipairs(args) do" +
+                "        local inx = redis.call('ZREVRANK', key, v);" +
+                "        if(inx) then" +
+                "             table.insert(result,1,v);" +
+                "        end" +
+                "    end" +
+                "    return result;");
+        para.add("1");
+        para.add(key);
+        for (Object field : fields) {
+            para.add(String.valueOf(field));
+        }
+
+        // todo:
+        //sendAsync("EVAL", null, para.toArray(Serializable[]::new)).thenApply(x -> x.).join();
+
+        return null;
+    }*/
 
     //--------------------- bit ------------------------------
     public boolean getBit(String key, int offset) {
@@ -70,6 +243,10 @@ public class MyRedisCacheSource extends RedisCacheSource {
         return get(key, String.class);
     }
 
+    public void set(String key, Serializable value) {
+        sendAsync("SET", key, value).join();
+    }
+
     //--------------------- set ------------------------------
     public <T> void sadd(String key, Collection<T> args) {
         saddAsync(key, args.toArray(Serializable[]::new)).join();
@@ -92,6 +269,19 @@ public class MyRedisCacheSource extends RedisCacheSource {
     }
 
     //--------------------- hm ------------------------------
+
+    /*public Long incrHm(String key, String field, int value) {
+        return sendAsync("HINCRBY", key, field, value).thenApply(x -> x.getLongValue(0l)).join();
+    }
+
+    public Double incrHm(String key, String field, double value) {
+        return sendAsync("HINCRBYFLOAT", key, field, value).thenApply(x -> x.getDoubleValue(0d)).join();
+    }*/
+
+    public void setHm(String key, String field, Serializable value) {
+        setHmsAsync(key, Map.of(field, value)).join();
+    }
+
     public void setHms(String key, Map kv) {
         setHmsAsync(key, kv).join();
     }
@@ -130,8 +320,24 @@ public class MyRedisCacheSource extends RedisCacheSource {
         Map<String, T> map = new HashMap<>(field.length);
 
         for (int i = 0; i < field.length; i++) {
+            if (list.get(i) == null) {
+                continue;
+            }
             map.put(field[i], (T) list.get(i));
         }
         return map;
     }
+
+    /*public Map<String, Object> getHmall(String key) {
+        List<String> list = null;  // TODO:
+        Map<String, Object> map = new HashMap<>();
+        if (list.isEmpty()) {
+            return map;
+        }
+
+        for (int i = 0; i + 1 < list.size(); i += 2) {
+            map.put((String) list.get(i), list.get(i + 1));
+        }
+        return map;
+    }*/
 }

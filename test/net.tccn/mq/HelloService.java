@@ -1,9 +1,8 @@
-package com.zdemo.test;
+package net.tccn.mq;
 
-import com.zdemo.IType;
-import com.zdemo.ZhubProvider;
-import com.zdemo.zhub.RpcResult;
-import com.zdemo.zhub.ZHubClient;
+import net.tccn.IType;
+import net.tccn.zhub.RpcResult;
+import net.tccn.zhub.ZHubClient;
 import org.redkale.net.http.RestMapping;
 import org.redkale.net.http.RestService;
 import org.redkale.service.Service;
@@ -48,7 +47,7 @@ public class HelloService implements Service {
         zhub.rpcSubscribe("y", new TypeToken<String>() {
         }, r -> {
 
-            return r.buildResp(Map.of("v", r.getValue().toUpperCase() + ": Ok"));
+            return r.render(Map.of("v", r.getValue().toUpperCase() + ": Ok"));
         });
 
         zhub.subscribe("sport:reqtime", x -> {

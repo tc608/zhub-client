@@ -1,4 +1,4 @@
-package org.redkalex.cache.redis.test;
+package net.tccn.cache;
 
 import org.redkale.net.AsyncIOGroup;
 import org.redkale.util.AnyValue;
@@ -75,7 +75,7 @@ public class RedisTest {
 
         //source.getexLong()
 
-        source.setHms("hmx", Map.of("a", "5","b", "51", "c", "ads"));
+        source.setHms("hmx", Map.of("a", "5", "b", "51", "c", "ads"));
 
         List<Serializable> hmget = source.hmget("hmx", int.class, "a");
 
@@ -85,7 +85,23 @@ public class RedisTest {
         System.out.println(hm);
 
         Map<String, String> hms = source.getHms("hmx", "a", "b");
-        System.out.println(hms);
+        System.out.println("hmx:" + hms);
+
+        /*System.out.println("======================================================");
+        System.out.println(source.incrHm("hmx", "a", -6.0));
+        hms = source.getHms("hmx", "a", "b");
+        System.out.println("hmx：a+1后的结果 " + hms);*/
+        System.out.println("======================================================");
+        source.setHm("hmx", "c", 12);
+        hms = source.getHms("hmx", "a", "b", "c", "d", "a");
+        System.out.println("hmx：设置 c=12 后的结果 " + hms);
+        System.out.println("======================================================");
+        Double c = source.getHm("hmx", double.class, "c");
+        System.out.println("hmx 中 c 值：" + c);
+
+        /*Map<String, Object> hmx = source.getHmall("hmx");
+        System.out.println("Hmall：" + hmx);*/
+
 
 
 

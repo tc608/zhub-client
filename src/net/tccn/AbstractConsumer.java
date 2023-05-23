@@ -4,7 +4,6 @@ import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.Resourcable;
 import org.redkale.util.TypeToken;
 
-import javax.annotation.Resource;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,8 +17,7 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
 
     protected JsonConvert convert = JsonConvert.root();
 
-    @Resource(name = "APP_NAME")
-    protected String APP_NAME = "";
+    protected static String APP_NAME = "";
 
     private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
 

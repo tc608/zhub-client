@@ -58,36 +58,11 @@ public class Rpc<T> {
         return ruk.split("::")[0];
     }
 
-    @Deprecated(since = "2023.04.15")
-    public <R> RpcResult<R> buildResp() {
-        RpcResult<R> response = new RpcResult<>();
-        response.setRuk(ruk);
-        return response;
-    }
-
-    @Deprecated(since = "2023.04.15")
-    public <R> RpcResult<R> buildResp(int retcode, String retinfo) {
+    public <R> RpcResult<R> render(int retcode, String retinfo) {
         RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         response.setRetcode(retcode);
         response.setRetinfo(retinfo);
-        return response;
-    }
-
-    @Deprecated(since = "2023.04.15")
-    public <R> RpcResult<R> buildError(String retinfo) {
-        RpcResult<R> response = new RpcResult<>();
-        response.setRuk(ruk);
-        response.setRetcode(100);
-        response.setRetinfo(retinfo);
-        return response;
-    }
-
-    @Deprecated(since = "2023.04.15")
-    public <R> RpcResult<R> buildResp(R result) {
-        RpcResult<R> response = new RpcResult<>();
-        response.setRuk(ruk);
-        response.setResult(result);
         return response;
     }
 
