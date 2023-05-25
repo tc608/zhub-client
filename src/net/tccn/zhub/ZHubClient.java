@@ -56,10 +56,19 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     };*/
 
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
-/*
+
     public ZHubClient() {
-        logger.info("ZHubClient:" + (application != null ? application.getName() : "NULL"));
-    }*/
+
+    }
+
+    public ZHubClient(String name, Map<String, String> attr) {
+        this.APP_NAME = name;
+        this.addr = attr.get("addr");
+        this.groupid = attr.get("groupid");
+        this.auth = attr.get("auth");
+
+        this.initClient(null);
+    }
 
     @Override
     public void init(AnyValue config) {
@@ -99,215 +108,217 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             mainHub.put(addr, this);
         }
 
-        // 消息 事件接收
-        new Thread(() -> {
-            if (!initSocket(0)) {
-                return;
-            }
+        CompletableFuture.runAsync(() -> {
+            // 消息 事件接收
+            new Thread(() -> {
+                if (!initSocket(0)) {
+                    return;
+                }
 
-            while (true) {
-                try {
-                    String readLine = reader.readLine();
-                    if (readLine == null && initSocket(Integer.MAX_VALUE)) { // 连接中断 处理
-                        continue;
-                    }
-
-                    String type = "";
-
-                    // +ping
-                    if ("+ping".equals(readLine)) {
-                        send("+pong");
-                        continue;
-                    }
-
-                    // 主题订阅消息
-                    if ("*3".equals(readLine)) {
-                        readLine = reader.readLine(); // $7 len()
-                        type = reader.readLine(); // message
-                        if (!"message".equals(type)) {
+                while (true) {
+                    try {
+                        String readLine = reader.readLine();
+                        if (readLine == null && initSocket(Integer.MAX_VALUE)) { // 连接中断 处理
                             continue;
                         }
-                        reader.readLine(); //$n len(key)
-                        String topic = reader.readLine(); // topic
 
-                        String lenStr = reader.readLine();//$n len(value)
-                        int clen = 0;
-                        if (lenStr.startsWith("$")) {
-                            clen = Integer.parseInt(lenStr.replace("$", ""));
+                        String type = "";
+
+                        // +ping
+                        if ("+ping".equals(readLine)) {
+                            send("+pong");
+                            continue;
                         }
 
-                        String value = "";
-                        do {
-                            if (value.length() > 0) {
-                                value += "\r\n";
+                        // 主题订阅消息
+                        if ("*3".equals(readLine)) {
+                            readLine = reader.readLine(); // $7 len()
+                            type = reader.readLine(); // message
+                            if (!"message".equals(type)) {
+                                continue;
                             }
-                            String s = reader.readLine();
-                            value += s; // value
-                        } while (clen > 0 && clen > strLength(value));
+                            reader.readLine(); //$n len(key)
+                            String topic = reader.readLine(); // topic
 
-                        logger.finest("topic[" + topic + "]: " + value);
+                            String lenStr = reader.readLine();//$n len(value)
+                            int clen = 0;
+                            if (lenStr.startsWith("$")) {
+                                clen = Integer.parseInt(lenStr.replace("$", ""));
+                            }
 
-                        // lock msg
-                        if ("lock".equals(topic)) {
-                            Lock lock = lockTag.get(value);
-                            if (lock != null) {
-                                synchronized (lock) {
-                                    lock.notifyAll();
+                            String value = "";
+                            do {
+                                if (value.length() > 0) {
+                                    value += "\r\n";
                                 }
+                                String s = reader.readLine();
+                                value += s; // value
+                            } while (clen > 0 && clen > strLength(value));
+
+                            logger.finest("topic[" + topic + "]: " + value);
+
+                            // lock msg
+                            if ("lock".equals(topic)) {
+                                Lock lock = lockTag.get(value);
+                                if (lock != null) {
+                                    synchronized (lock) {
+                                        lock.notifyAll();
+                                    }
+                                }
+                                continue;
                             }
+                            // rpc back msg
+                            if (APP_NAME.equals(topic)) {
+                                rpcBackQueue.add(Event.of(topic, value));
+                                continue;
+                            }
+
+                            // rpc call msg
+                            if (rpcTopics.contains(topic)) {
+                                rpcCallQueue.add(Event.of(topic, value));
+                                continue;
+                            }
+
+                            // oth msg
+                            topicQueue.add(Event.of(topic, value));
                             continue;
                         }
-                        // rpc back msg
-                        if (APP_NAME.equals(topic)) {
-                            rpcBackQueue.add(Event.of(topic, value));
+
+                        // timer 消息
+                        if ("*2".equals(readLine)) {
+                            readLine = reader.readLine(); // $7 len()
+                            type = reader.readLine(); // message
+                            if (!"timer".equals(type)) {
+                                continue;
+                            }
+                            reader.readLine(); //$n len(key)
+                            String topic = reader.readLine(); // name
+
+                            logger.finest("timer[" + topic + "]: ");
+                            timerQueue.add(timerMap.get(topic));
                             continue;
                         }
 
-                        // rpc call msg
-                        if (rpcTopics.contains(topic)) {
-                            rpcCallQueue.add(Event.of(topic, value));
+                        logger.finest(readLine);
+                    } catch (IOException e) {
+                        if (e instanceof SocketException) {
+                            initSocket(Integer.MAX_VALUE);
+                        }
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+        }).thenAcceptAsync(x -> {
+            // 定时调度事件，已加入耗时监控
+            new Thread(() -> {
+                ExecutorService pool = Executors.newFixedThreadPool(1);
+                while (true) {
+                    Timer timer = null;
+                    try {
+                        if ((timer = timerQueue.take()) == null) {
+                            return;
+                        }
+                        long start = System.currentTimeMillis();
+                        pool.submit(timer.runnable).get(5, TimeUnit.SECONDS);
+                        long end = System.currentTimeMillis();
+                        logger.finest(String.format("timer [%s] : elapsed time %s ms", timer.name, end - start));
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (TimeoutException e) {
+                        logger.log(Level.SEVERE, "timer [" + timer.name + "] time out: " + 5 + " S", e);
+                        pool = Executors.newFixedThreadPool(1);
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "timer [" + timer.name + "]", e);
+                    }
+                }
+            }).start();
+
+            // topic msg，已加入耗时监控
+            new Thread(() -> {
+                ExecutorService pool = Executors.newFixedThreadPool(1);
+                while (true) {
+                    Event<String> event = null;
+                    try {
+                        if ((event = topicQueue.take()) == null) {
                             continue;
                         }
 
-                        // oth msg
-                        topicQueue.add(Event.of(topic, value));
-                        continue;
+                        String topic = event.topic;
+                        String value = event.value;
+                        pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (TimeoutException e) {
+                        logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
+                        pool = Executors.newFixedThreadPool(1);
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "topic[" + event.topic + "] event accept error :" + event.value, e);
                     }
+                }
+            }).start();
 
-                    // timer 消息
-                    if ("*2".equals(readLine)) {
-                        readLine = reader.readLine(); // $7 len()
-                        type = reader.readLine(); // message
-                        if (!"timer".equals(type)) {
+            // rpc back ,仅做数据解析，暂无耗时监控
+            new Thread(() -> {
+                while (true) {
+                    Event<String> event = null;
+                    try {
+                        if ((event = rpcBackQueue.take()) == null) {
                             continue;
                         }
-                        reader.readLine(); //$n len(key)
-                        String topic = reader.readLine(); // name
-
-                        logger.finest("timer[" + topic + "]: ");
-                        timerQueue.add(timerMap.get(topic));
-                        continue;
+                        //if (event)
+                        logger.finest(String.format("rpc-back:[%s]: %s", event.topic, event.value));
+                        rpcAccept(event.value);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "rpc-back[" + event.topic + "] event accept error :" + event.value, e);
                     }
-
-                    logger.finest(readLine);
-                } catch (IOException e) {
-                    if (e instanceof SocketException) {
-                        initSocket(Integer.MAX_VALUE);
-                    }
-                    e.printStackTrace();
                 }
-            }
-        }).start();
+            }).start();
 
-        // 定时调度事件，已加入耗时监控
-        new Thread(() -> {
-            ExecutorService pool = Executors.newFixedThreadPool(1);
-            while (true) {
-                Timer timer = null;
-                try {
-                    if ((timer = timerQueue.take()) == null) {
-                        return;
+            // rpc call，已加入耗时监控
+            new Thread(() -> {
+                ExecutorService pool = Executors.newFixedThreadPool(1);
+                while (true) {
+                    Event<String> event = null;
+                    try {
+                        if ((event = rpcCallQueue.take()) == null) {
+                            continue;
+                        }
+                        logger.finest(String.format("rpc-call:[%s] %s", event.topic, event.value));
+                        String topic = event.topic;
+                        String value = event.value;
+                        pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (TimeoutException e) {
+                        logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
+                        pool = Executors.newFixedThreadPool(1);
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
                     }
-                    long start = System.currentTimeMillis();
-                    pool.submit(timer.runnable).get(5, TimeUnit.SECONDS);
-                    long end = System.currentTimeMillis();
-                    logger.finest(String.format("timer [%s] : elapsed time %s ms", timer.name, end - start));
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (TimeoutException e) {
-                    logger.log(Level.SEVERE, "timer [" + timer.name + "] time out: " + 5 + " S", e);
-                    pool = Executors.newFixedThreadPool(1);
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "timer [" + timer.name + "]", e);
                 }
-            }
-        }).start();
+            }).start();
 
-        // topic msg，已加入耗时监控
-        new Thread(() -> {
-            ExecutorService pool = Executors.newFixedThreadPool(1);
-            while (true) {
-                Event<String> event = null;
-                try {
-                    if ((event = topicQueue.take()) == null) {
-                        continue;
+            // send msg
+            new Thread(() -> {
+                while (true) {
+                    String msg = null;
+                    try {
+                        if ((msg = sendMsgQueue.take()) == null) {
+                            continue;
+                        }
+                        // logger.log(Level.FINEST, "send-msg: [" + msg + "]");
+                        writer.write(msg.getBytes());
+                        writer.flush();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "send-msg[" + msg + "] event accept error :", e);
                     }
-
-                    String topic = event.topic;
-                    String value = event.value;
-                    pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (TimeoutException e) {
-                    logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
-                    pool = Executors.newFixedThreadPool(1);
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "topic[" + event.topic + "] event accept error :" + event.value, e);
                 }
-            }
-        }).start();
-
-        // rpc back ,仅做数据解析，暂无耗时监控
-        new Thread(() -> {
-            while (true) {
-                Event<String> event = null;
-                try {
-                    if ((event = rpcBackQueue.take()) == null) {
-                        continue;
-                    }
-                    //if (event)
-                    logger.finest(String.format("rpc-back:[%s]: %s", event.topic, event.value));
-                    rpcAccept(event.value);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "rpc-back[" + event.topic + "] event accept error :" + event.value, e);
-                }
-            }
-        }).start();
-
-        // rpc call，已加入耗时监控
-        new Thread(() -> {
-            ExecutorService pool = Executors.newFixedThreadPool(1);
-            while (true) {
-                Event<String> event = null;
-                try {
-                    if ((event = rpcCallQueue.take()) == null) {
-                        continue;
-                    }
-                    logger.finest(String.format("rpc-call:[%s] %s", event.topic, event.value));
-                    String topic = event.topic;
-                    String value = event.value;
-                    pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (TimeoutException e) {
-                    logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
-                    pool = Executors.newFixedThreadPool(1);
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
-                }
-            }
-        }).start();
-
-        // send msg
-        new Thread(() -> {
-            while (true) {
-                String msg = null;
-                try {
-                    if ((msg = sendMsgQueue.take()) == null) {
-                        continue;
-                    }
-                    // logger.log(Level.FINEST, "send-msg: [" + msg + "]");
-                    writer.write(msg.getBytes());
-                    writer.flush();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "send-msg[" + msg + "] event accept error :", e);
-                }
-            }
-        }).start();
+            }).start();
+        });
 
         return this;
     }
