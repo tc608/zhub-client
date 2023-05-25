@@ -3,8 +3,6 @@ package com.zdemo.cachex;
 import org.redkale.convert.json.JsonFactory;
 import org.redkale.util.AnyValue;
 
-import java.util.Map;
-
 public class RedisTest {
 
     static MyRedisCacheSource<String> source = new MyRedisCacheSource();
@@ -115,9 +113,14 @@ public class RedisTest {
         System.out.println(source.getCollectionSize("sk")); // 2*/
 
 
-        Map<String, String> hms = source.getHms("supportusers", "5-kfeu0f", "xxxx", "3-0kbt7u8t", "95q- ");
+        /*Map<String, String> hms = source.getHms("supportusers", "5-kfeu0f", "xxxx", "3-0kbt7u8t", "95q- ");
         hms.forEach((k, v) -> {
             System.out.println(k + " : " + v);
+        });*/
+
+        source.queryKeysStartsWith("ywb:").forEach(x -> {
+            System.out.println(x);
+            source.remove(x);
         });
 
 

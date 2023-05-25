@@ -30,7 +30,6 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private String auth = "";
     private String groupid = "";
 
-    //private ReentrantLock lock = new ReentrantLock();
     private Socket client;
     private OutputStream writer;
     private BufferedReader reader;
@@ -41,15 +40,20 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private final LinkedBlockingQueue<Event<String>> rpcCallQueue = new LinkedBlockingQueue<>(); // RPC CALL MSG
     private final LinkedBlockingQueue<String> sendMsgQueue = new LinkedBlockingQueue<>(); // SEND MSG
 
-    /*private BiConsumer<Runnable, Integer> threadBuilder = (r, n) -> {
-        for (int i = 0; i < n; i++) {
-            new Thread(() -> r.run()).start();
-        }
-    };*/
-
-    /*private static boolean isFirst = true;
-    private boolean isMain = false;*/
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
+
+    public ZHubClient() {
+
+    }
+
+    public ZHubClient(String name, Map<String, String> attr) {
+        this.APP_NAME = name;
+        this.addr = attr.get("addr");
+        this.groupid = attr.get("groupid");
+        this.auth = attr.get("auth");
+
+        this.init(null);
+    }
 
     @Override
     public void init(AnyValue config) {
