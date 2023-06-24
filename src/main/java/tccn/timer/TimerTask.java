@@ -1,8 +1,8 @@
-package net.tccn.timer;
+package tccn.timer;
 
-import net.tccn.timer.scheduled.Scheduled;
-import net.tccn.timer.task.Job;
-import net.tccn.timer.task.Task;
+import tccn.timer.scheduled.Scheduled;
+import tccn.timer.task.Job;
+import tccn.timer.task.Task;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;

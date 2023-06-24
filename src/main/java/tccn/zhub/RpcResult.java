@@ -1,4 +1,4 @@
-package net.tccn.zhub;
+package tccn.zhub;
 
 public class RpcResult<R> {
     private String ruk;

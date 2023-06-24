@@ -1,9 +1,7 @@
-import com.google.gson.reflect.TypeToken;
-import net.tccn.IType;
-import net.tccn.zhub.RpcResult;
-import net.tccn.zhub.ZHubClient;
 import org.junit.Before;
 import org.junit.Test;
+import tccn.IType;
+import tccn.zhub.ZHubClient;
 
 // @RestService(automapping = true)
 public class HelloService {

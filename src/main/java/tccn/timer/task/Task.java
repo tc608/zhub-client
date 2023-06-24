@@ -1,7 +1,7 @@
-package net.tccn.timer.task;
+package tccn.timer.task;
 
-import net.tccn.timer.TimerExecutor;
-import net.tccn.timer.scheduled.Scheduled;
+import tccn.timer.TimerExecutor;
+import tccn.timer.scheduled.Scheduled;
 
 /**
  * @author: liangxianyou at 2018/8/5 19:32.

@@ -1,4 +1,4 @@
-package net.tccn.timer.scheduled;
+package tccn.timer.scheduled;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;

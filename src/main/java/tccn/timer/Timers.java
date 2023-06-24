@@ -1,6 +1,6 @@
-package net.tccn.timer;
+package tccn.timer;
 
-import net.tccn.timer.scheduled.ScheduledCycle;
+import tccn.timer.scheduled.ScheduledCycle;
 
 import java.util.UUID;
 import java.util.function.Supplier;

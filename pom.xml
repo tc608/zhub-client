@@ -27,18 +27,4 @@
         </dependency>
     </dependencies>
 
-    <build>
-        <resources>
-            <resource>
-                <directory>src</directory>
-            </resource>
-        </resources>
-        <testResources>
-            <testResource>
-                <directory>test</directory>
-
-            </testResource>
-        </testResources>
-    </build>
-
 </project>

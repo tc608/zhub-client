@@ -1,4 +1,4 @@
-package net.tccn;
+package tccn;
 
 /**
  * 发布订阅 事件

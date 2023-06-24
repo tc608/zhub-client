@@ -1,6 +1,6 @@
-package net.tccn.timer.queue;
+package tccn.timer.queue;
 
-import net.tccn.timer.task.Task;
+import tccn.timer.task.Task;
 
 import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;

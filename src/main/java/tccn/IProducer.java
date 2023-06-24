@@ -1,4 +1,4 @@
-package net.tccn;
+package tccn;
 
 import java.util.logging.Logger;
 

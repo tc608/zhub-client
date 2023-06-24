@@ -1,7 +1,7 @@
-package net.tccn.timer;
+package tccn.timer;
 
-import net.tccn.timer.queue.TimerQueue;
-import net.tccn.timer.task.Task;
+import tccn.timer.queue.TimerQueue;
+import tccn.timer.task.Task;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
