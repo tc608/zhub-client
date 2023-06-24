@@ -1,14 +1,9 @@
-package net.tccn.cache;
+package net.tccn;
 
 import org.redkale.net.AsyncIOGroup;
 import org.redkale.util.AnyValue;
 import org.redkale.util.ResourceFactory;
 import org.redkalex.cache.redis.MyRedisCacheSource;
-
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 
 import static org.redkale.boot.Application.RESNAME_APP_CLIENT_ASYNCGROUP;
 import static org.redkale.source.AbstractCacheSource.*;
@@ -19,7 +14,7 @@ public class RedisTest {
 
     static { // redis://:*Zhong9307!@47.111.150.118:6064?db=2
         AnyValue.DefaultAnyValue conf = new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_MAXCONNS, "1");
-        conf.addValue(CACHE_SOURCE_NODE, new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_URL, "redis://:*Zhong9307!@47.111.150.118:6064?db=0"));
+        conf.addValue(CACHE_SOURCE_NODE, new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_URL, "redis://:123456@127.0.0.1:6379?db=0"));
         final ResourceFactory factory = ResourceFactory.create();
         final AsyncIOGroup asyncGroup = new AsyncIOGroup(8192, 16);
         asyncGroup.start();
@@ -27,6 +22,8 @@ public class RedisTest {
         factory.inject(source);
         //source.defaultConvert = JsonFactory.root().getConvert();
         source.init(conf);
+
+        System.out.println(source.get("a"));
 
         //--------------------- bit ------------------------------
         /*boolean ax = source.getBit("ax", 6);
@@ -47,12 +44,62 @@ public class RedisTest {
         source.lock("lockx", 5000);
         */
 
+
+        source.keysStartsWith("more-hot").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+
+            int i = (short) 3;
+        });
+
+        source.keysStartsWith("districtbeans").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("oss-blind-users").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("venue:drama-product-schedule-fee:rt-lbeuai84:20221217").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("venue:site-hour-fee:54f6e9b74cd7416db8d605366c1f49c2:20220729").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("rainbow").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("run").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("today").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("user").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("im:").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+        source.keysStartsWith("ios-").forEach(x -> {
+            System.out.println(x);
+            source.del(x);
+        });
+
+
         //--------------------- set ------------------------------
-        source.del("setx");
-        /*
+        /*source.del("setx");
+         *//*
         int[] ints = {1, 2, 3};
         source.sadd("setx", ints);
-        */
+        *//*
 
         //source.sadd("setx", list.toArray(Integer[]::new));
         List<Integer> list = List.of(2, 3, 5);
@@ -87,17 +134,17 @@ public class RedisTest {
         Map<String, String> hms = source.getHms("hmx", "a", "b");
         System.out.println("hmx:" + hms);
 
-        /*System.out.println("======================================================");
+        *//*System.out.println("======================================================");
         System.out.println(source.incrHm("hmx", "a", -6.0));
         hms = source.getHms("hmx", "a", "b");
-        System.out.println("hmx：a+1后的结果 " + hms);*/
+        System.out.println("hmx：a+1后的结果 " + hms);*//*
         System.out.println("======================================================");
         source.setHm("hmx", "c", 12);
         hms = source.getHms("hmx", "a", "b", "c", "d", "a");
         System.out.println("hmx：设置 c=12 后的结果 " + hms);
         System.out.println("======================================================");
         Double c = source.getHm("hmx", double.class, "c");
-        System.out.println("hmx 中 c 值：" + c);
+        System.out.println("hmx 中 c 值：" + c);*/
 
         /*Map<String, Object> hmx = source.getHmall("hmx");
         System.out.println("Hmall：" + hmx);*/
