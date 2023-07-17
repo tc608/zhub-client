@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>net.tccn</groupId>
-    <artifactId>zhub-client</artifactId>
+    <artifactId>zhub-cli</artifactId>
     <version>1.0</version>
 
     <properties>
@@ -26,5 +26,22 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <repositories>
+        <repository>
+            <id>maven-nexus</id>
+            <name>maven-nexus</name>
+            <url>http://47.106.237.198:8081/repository/maven-public/</url>
+        </repository>
+    </repositories>
+
+
+    <distributionManagement>
+        <repository>
+            <id>mvn-release</id>
+            <name>mvn-release</name>
+            <url>http://47.106.237.198:8081/repository/maven-releases/</url>
+        </repository>
+    </distributionManagement>
 
 </project>

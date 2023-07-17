@@ -62,21 +62,20 @@ public class Rpc<T> {
         return ruk.split("::")[0];
     }
 
-    public <R> RpcResult<R> buildResp() {
+    public <R> RpcResult<R> render() {
         RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         return response;
     }
 
-    public <R> RpcResult<R> buildResp(int retcode, String retinfo) {
+    public <R> RpcResult<R> render(R result) {
         RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
-        response.setRetcode(retcode);
-        response.setRetinfo(retinfo);
+        response.setResult(result);
         return response;
     }
 
-    public <R> RpcResult<R> buildError(String retinfo) {
+    public <R> RpcResult<R> retError(String retinfo) {
         RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
         response.setRetcode(100);
@@ -84,10 +83,11 @@ public class Rpc<T> {
         return response;
     }
 
-    public <R> RpcResult<R> buildResp(R result) {
+    public <R> RpcResult<R> retError(int retcode, String retinfo) {
         RpcResult<R> response = new RpcResult<>();
         response.setRuk(ruk);
-        response.setResult(result);
+        response.setRetcode(retcode);
+        response.setRetinfo(retinfo);
         return response;
     }
 }

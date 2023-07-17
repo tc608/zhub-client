@@ -55,10 +55,10 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private boolean isMain = false;*/
     private static final Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
 
-    public ZHubClient(String addr, String groupid, String appname, String auth) {
+    public ZHubClient(String addr, String groupid, String appid, String auth) {
         this.addr = addr;
         this.groupid = groupid;
-        this.APP_NAME = appname;
+        this.APP_ID = appid;
         this.auth = auth;
         init(null);
     }
@@ -72,7 +72,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         if (config != null) {
             addr = config.getOrDefault("addr", addr);
             groupid = config.getOrDefault("groupid", groupid);
-            APP_NAME = config.getOrDefault("appname", APP_NAME);
+            APP_ID = config.getOrDefault("appname", APP_ID);
         }
 
         // 设置第一个启动的 实例为主实例
@@ -142,7 +142,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             continue;
                         }
                         // rpc back msg
-                        if (APP_NAME.equals(topic)) {
+                        if (APP_ID.equals(topic)) {
                             rpcBackQueue.add(Event.of(topic, value));
                             continue;
                         }
@@ -359,7 +359,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 /*if (isMain) {
                 }*/
                 if (mainHub.containsValue(this)) {
-                    buf.append(" ").append(APP_NAME);
+                    buf.append(" ").append(APP_ID);
                 }
                 for (String topic : getTopics()) {
                     buf.append(" ").append(topic);
@@ -533,7 +533,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     // rpc call
     public <T, R> RpcResult<R> rpc(String topic, T v, TypeToken<R> typeToken, long timeout) {
-        Rpc rpc = new Rpc<>(APP_NAME, UUID.randomUUID().toString().replaceAll("-", ""), topic, v);
+        Rpc rpc = new Rpc<>(APP_ID, UUID.randomUUID().toString().replaceAll("-", ""), topic, v);
         String ruk = rpc.getRuk();
         rpcMap.put(ruk, rpc);
         if (typeToken != null) {
@@ -553,7 +553,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             return;
                         }
 
-                        RpcResult rpcResult = rpc.buildResp(505, "请求超时");
+                        RpcResult rpcResult = rpc.retError(505, "请求超时");
                         rpc.setRpcResult(rpcResult);
                         logger.warning("rpc timeout: " + gson.toJson(rpc));
                         rpc.notify();
@@ -566,7 +566,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         } catch (InterruptedException e) {
             e.printStackTrace();
             // call error
-            RpcResult rpcResult = rpc.buildResp(501, "请求失败");
+            RpcResult rpcResult = rpc.retError(501, "请求失败");
             rpc.setRpcResult(rpcResult);
         }
         return rpc.getRpcResult();
@@ -632,7 +632,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 publish(rpc.getBackTopic(), result);
             } catch (Exception e) {
                 logger.log(Level.WARNING, "rpc call consumer error: " + v, e);
-                publish(rpc.getBackTopic(), rpc.buildError("服务调用失败！"));
+                publish(rpc.getBackTopic(), rpc.retError("服务调用失败！"));
             }
             // back
         };
