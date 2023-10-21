@@ -18,9 +18,6 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public Gson gson = Rpc.gson;
 
-    // @Resource(name = "APP_NAME")
-    protected String APP_ID = "";
-
     private Map<String, EventType> eventMap = new HashMap<>();
 
     protected abstract String getGroupid();

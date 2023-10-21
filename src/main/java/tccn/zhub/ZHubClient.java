@@ -1,12 +1,15 @@
 package tccn.zhub;
 
 import com.google.gson.reflect.TypeToken;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 import tccn.AbstractConsumer;
 import tccn.Event;
 import tccn.IConsumer;
 import tccn.IProducer;
 import tccn.timer.Timers;
 
+import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -27,14 +30,26 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-
+@Component
 public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
+    @Value("${zhub.addr}")
     private String addr = "127.0.0.1:1216";
-    //private String password = "";
+
+    @Value("${zhub.groupid}")
     private String groupid = "";
+
+    @Value("${zhub.auth}")
     private String auth = "";
+
+    @Value("${zhub.appid}")
+    protected String appid = "";
+
+    @PostConstruct
+    public void init() {
+        init(null);
+    }
 
     private OutputStream writer;
     private BufferedReader reader;
@@ -58,7 +73,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     public ZHubClient(String addr, String groupid, String appid, String auth) {
         this.addr = addr;
         this.groupid = groupid;
-        this.APP_ID = appid;
+        this.appid = appid;
         this.auth = auth;
         init(null);
     }
@@ -72,7 +87,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         if (config != null) {
             addr = config.getOrDefault("addr", addr);
             groupid = config.getOrDefault("groupid", groupid);
-            APP_ID = config.getOrDefault("appname", APP_ID);
+            appid = config.getOrDefault("appname", appid);
         }
 
         // 设置第一个启动的 实例为主实例
@@ -142,7 +157,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             continue;
                         }
                         // rpc back msg
-                        if (APP_ID.equals(topic)) {
+                        if (appid.equals(topic)) {
                             rpcBackQueue.add(Event.of(topic, value));
                             continue;
                         }
@@ -359,7 +374,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 /*if (isMain) {
                 }*/
                 if (mainHub.containsValue(this)) {
-                    buf.append(" ").append(APP_ID);
+                    buf.append(" ").append(appid);
                 }
                 for (String topic : getTopics()) {
                     buf.append(" ").append(topic);
@@ -533,7 +548,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     // rpc call
     public <T, R> RpcResult<R> rpc(String topic, T v, TypeToken<R> typeToken, long timeout) {
-        Rpc rpc = new Rpc<>(APP_ID, UUID.randomUUID().toString().replaceAll("-", ""), topic, v);
+        Rpc rpc = new Rpc<>(appid, UUID.randomUUID().toString().replaceAll("-", ""), topic, v);
         String ruk = rpc.getRuk();
         rpcMap.put(ruk, rpc);
         if (typeToken != null) {

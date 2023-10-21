@@ -1,0 +1,7 @@
+
+# zhub 配置
+zhub:
+  appid: local_api
+  addr: 127.0.0.1:1216
+  groupid: hub-api
+  auth: token-12345
