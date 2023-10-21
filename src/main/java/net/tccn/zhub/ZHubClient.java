@@ -18,10 +18,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -162,11 +159,24 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                                 Lock lock = lockTag.get(value);
                                 if (lock != null) {
                                     synchronized (lock) {
+                                        lock.success = true;
                                         lock.notifyAll();
                                     }
                                 }
                                 continue;
                             }
+                            // trylock msg
+                            if ("trylock".equals(topic)) {
+                                Lock lock = lockTag.get(value);
+                                if (lock != null) {
+                                    synchronized (lock) {
+                                        lock.success = false;
+                                        lock.notifyAll();
+                                    }
+                                }
+                                continue;
+                            }
+
                             // rpc back msg
                             if (APP_NAME.equals(topic)) {
                                 rpcBackQueue.add(Event.of(topic, value));
@@ -422,7 +432,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 send("auth", auth);
                 send("groupid " + groupid);
 
-                StringBuffer buf = new StringBuffer("subscribe lock");
+                StringBuffer buf = new StringBuffer("subscribe lock trylock");
                 if (mainHub.containsValue(this)) {
                     buf.append(" " + APP_NAME);
                 }
@@ -527,32 +537,35 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     // ================================================== lock ==================================================
     private Map<String, Lock> lockTag = new ConcurrentHashMap<>();
 
+    /**
+     * 尝试加锁，立即返回，
+     *
+     * @param key
+     * @param duration
+     * @return Lock: lock.success 锁定是否成功标识
+     */
     public Lock tryLock(String key, int duration) {
-        String uuid = Utility.uuid();
-        Lock lock = new Lock(key, uuid, duration, this);
-        lockTag.put(uuid, lock);
-
-        try {
-            // c.send("lock", key, uuid, strconv.Itoa(duration))
-            send("lock", key, uuid, String.valueOf(duration));
-            synchronized (lock) {
-                lock.wait();
-            }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        return lock;
+        return lock("trylock", key, duration);
     }
 
-    // 为替换 tryLock 方法做过度准确
     public Lock lock(String key, int duration) {
-        String uuid = Utility.uuid();
+        return lock("lock", key, duration);
+    }
+
+    /**
+     * @param cmd      lock|trylock
+     * @param key      加锁 key
+     * @param duration 锁定时长
+     * @return
+     */
+    private Lock lock(String cmd, String key, int duration) {
+        String uuid = UUID.randomUUID().toString().replaceAll("-", "");
         Lock lock = new Lock(key, uuid, duration, this);
         lockTag.put(uuid, lock);
 
         try {
             // c.send("lock", key, uuid, strconv.Itoa(duration))
-            send("lock", key, uuid, String.valueOf(duration));
+            send(cmd, key, uuid, String.valueOf(duration));
             synchronized (lock) {
                 lock.wait();
             }
