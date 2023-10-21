@@ -151,11 +151,24 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                             Lock lock = lockTag.get(value);
                             if (lock != null) {
                                 synchronized (lock) {
+                                    lock.success = true;
                                     lock.notifyAll();
                                 }
                             }
                             continue;
                         }
+                        // trylock msg
+                        if ("trylock".equals(topic)) {
+                            Lock lock = lockTag.get(value);
+                            if (lock != null) {
+                                synchronized (lock) {
+                                    lock.success = false;
+                                    lock.notifyAll();
+                                }
+                            }
+                            continue;
+                        }
+
                         // rpc back msg
                         if (appid.equals(topic)) {
                             rpcBackQueue.add(Event.of(topic, value));
@@ -370,7 +383,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 send("auth", auth);
                 send("groupid " + groupid);
 
-                StringBuffer buf = new StringBuffer("subscribe lock");
+                StringBuffer buf = new StringBuffer("subscribe lock trylock");
                 /*if (isMain) {
                 }*/
                 if (mainHub.containsValue(this)) {
@@ -481,14 +494,35 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     // ================================================== lock ==================================================
     private final Map<String, Lock> lockTag = new ConcurrentHashMap<>();
 
+    /**
+     * 尝试加锁，立即返回，
+     *
+     * @param key
+     * @param duration
+     * @return Lock: lock.success 锁定是否成功标识
+     */
     public Lock tryLock(String key, int duration) {
+        return lock("trylock", key, duration);
+    }
+
+    public Lock lock(String key, int duration) {
+        return lock("lock", key, duration);
+    }
+
+    /**
+     * @param cmd      lock|trylock
+     * @param key      加锁 key
+     * @param duration 锁定时长
+     * @return
+     */
+    private Lock lock(String cmd, String key, int duration) {
         String uuid = UUID.randomUUID().toString().replaceAll("-", "");
         Lock lock = new Lock(key, uuid, duration, this);
         lockTag.put(uuid, lock);
 
         try {
             // c.send("lock", key, uuid, strconv.Itoa(duration))
-            send("lock", key, uuid, String.valueOf(duration));
+            send(cmd, key, uuid, String.valueOf(duration));
             synchronized (lock) {
                 lock.wait();
             }

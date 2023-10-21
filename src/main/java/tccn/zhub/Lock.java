@@ -2,10 +2,11 @@ package tccn.zhub;
 
 // ================================================== lock ==================================================
 public class Lock {
-    private String name;
-    private String uuid;
-    private int duration;
-    private ZHubClient hubClient;
+    protected String name;
+    protected String uuid;
+    protected int duration;
+    protected boolean success;
+    protected ZHubClient hubClient;
 
     protected Lock(String name, String uuid, int duration, ZHubClient hubClient) {
         this.name = name;
@@ -16,5 +17,9 @@ public class Lock {
 
     public void unLock() {
         hubClient.send("unlock", name, uuid);
+    }
+
+    public boolean success() {
+        return success;
     }
 }

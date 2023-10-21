@@ -1,6 +1,7 @@
 import org.junit.Before;
 import org.junit.Test;
 import tccn.IType;
+import tccn.zhub.Lock;
 import tccn.zhub.ZHubClient;
 
 // @RestService(automapping = true)
@@ -15,11 +16,15 @@ public class HelloService {
 
 
         //zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL", "zchd@123456");
-        zhub = new ZHubClient("47.111.150.118:6066", "g-dev", "DEV-LOCAL", "zchd@123456");
+        zhub = new ZHubClient("127.0.0.1:1216", "g-dev", "DEV-LOCAL", "token-12345");
 
         zhub.subscribe("tv:test", x -> {
             System.out.println(x);
         });
+
+        Lock lock = zhub.tryLock("lock-a", 5);
+        System.out.println("lock-1: " + lock.success());
+
         //zhub.init(Kv.of("host", "47.111.150.118", "port", "6066", "groupid", "g-dev", "appname", "DEV-LOCAL"));
 
         // Function<Rpc<T>, RpcResult<R>> fun
@@ -65,14 +70,37 @@ public class HelloService {
         });
 
         zhub.rpcSubscribe("rpc-x", IType.STRING, x -> {
-            return x.buildResp(x.getValue().toUpperCase());
+            return x.render(x.getValue().toUpperCase());
         });
+
+        Lock lock = zhub.tryLock("lock-a", 5);
+        System.out.println("lock-2: " + lock.success());
+
+        try {
+            Thread.sleep(5 * 1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+        Lock lock2 = zhub.tryLock("lock-a", 5);
+        System.out.println("lock-3: " + lock2.success());
+        /*try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }*/
+        Lock lock3 = zhub.tryLock("lock-a", 5);
+        System.out.println("lock-4: " + lock3.success());
 
         try {
             Thread.sleep(3000 * 30000);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void lockTest() {
+
     }
 
     /*RpcResult<FileToken> x = zhub.rpc("rpc:file:up-token", Map.of(), new TypeToken<>() {
