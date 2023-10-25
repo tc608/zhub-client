@@ -7,6 +7,7 @@ package org.redkalex.cache.redis;
 import org.redkale.util.AnyValue;
 
 /**
+ *
  * @author zhangjx
  */
 public interface RedisCryptor {
@@ -23,6 +24,7 @@ public interface RedisCryptor {
      *
      * @param key   key
      * @param value 明文
+     *
      * @return 密文
      */
     public String encrypt(String key, String value);
@@ -32,6 +34,7 @@ public interface RedisCryptor {
      *
      * @param key   key
      * @param value 密文
+     *
      * @return 明文
      */
     public String decrypt(String key, String value);

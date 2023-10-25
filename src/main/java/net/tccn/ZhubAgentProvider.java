@@ -30,11 +30,6 @@ public abstract class ZhubAgentProvider extends ClusterAgent {
     }
 
     @Override
-    public CompletableFuture<Map<String, Set<InetSocketAddress>>> queryMqtpAddress(String protocol, String module, String resname) {
-        return null;
-    }
-
-    @Override
     public CompletableFuture<Set<InetSocketAddress>> queryHttpAddress(String protocol, String module, String resname) {
         return null;
     }

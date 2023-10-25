@@ -10,11 +10,15 @@ import org.redkale.net.WorkThread;
 import org.redkale.net.client.Client;
 import org.redkale.net.client.ClientCodec;
 import org.redkale.net.client.ClientConnection;
+import org.redkale.net.client.ClientFuture;
 
+import java.io.Serializable;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /**
+ *
  * @author zhangjx
  */
 public class RedisCacheConnection extends ClientConnection<RedisCacheRequest, RedisCacheResult> {
@@ -32,8 +36,16 @@ public class RedisCacheConnection extends ClientConnection<RedisCacheRequest, Re
         return super.writeChannel(request);
     }
 
+    protected CompletableFuture<List<RedisCacheResult>> writeRequest(RedisCacheRequest[] requests) {
+        return super.writeChannel(requests);
+    }
+
     protected <T> CompletableFuture<T> writeRequest(RedisCacheRequest request, Function<RedisCacheResult, T> respTransfer) {
         return super.writeChannel(request, respTransfer);
+    }
+
+    protected <T> CompletableFuture<List<T>> writeRequest(RedisCacheRequest[] requests, Function<RedisCacheResult, T> respTransfer) {
+        return super.writeChannel(requests, respTransfer);
     }
 
     public RedisCacheResult pollResultSet(RedisCacheRequest request) {
@@ -41,9 +53,12 @@ public class RedisCacheConnection extends ClientConnection<RedisCacheRequest, Re
         return rs;
     }
 
-    public RedisCacheRequest pollRequest(WorkThread workThread) {
-        RedisCacheRequest rs = new RedisCacheRequest().currThread(workThread);
+    public RedisCacheRequest pollRequest(WorkThread workThread, String traceid) {
+        RedisCacheRequest rs = new RedisCacheRequest().workThread(workThread).traceid(traceid);
         return rs;
     }
 
+    protected ClientFuture<RedisCacheRequest, RedisCacheResult> pollRespFuture(Serializable requestid) {
+        return super.pollRespFuture(requestid);
+    }
 }

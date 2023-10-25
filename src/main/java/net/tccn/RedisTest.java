@@ -1,5 +1,6 @@
 package net.tccn;
 
+import org.junit.Test;
 import org.redkale.net.AsyncIOGroup;
 import org.redkale.util.AnyValue;
 import org.redkale.util.ResourceFactory;
@@ -12,9 +13,65 @@ public class RedisTest {
 
     static MyRedisCacheSource source = new MyRedisCacheSource();
 
+    /**
+     * 3
+     */
+    @Test
+    public void keyTest() {
+        source.set("a", 3);
+        System.out.println(source.get("a"));
+        source.del("a");
+    }
+
+    /**
+     * ax:false
+     * ax:true
+     * ax:false
+     */
+    @Test
+    public void bitTest() {
+        boolean ax = source.getBit("ax", 6);
+        System.out.println("ax:"+ ax); // false
+        source.setBit("ax", 6, true);
+
+        ax = source.getBit("ax", 6);
+        System.out.println("ax:"+ ax); // true
+
+        source.setBit("ax", 6, false);
+        ax = source.getBit("ax", 6);
+        System.out.println("ax:"+ ax); // false
+        source.del("ax");
+    }
+
+    @Test
+    public void setTest() {
+        source.del("setx");
+        source.sadd("setx", int.class, 1, 2, 3, 5, 6);
+        int setx = source.spop("setx", int.class);
+        System.out.println(setx);
+
+        setx = source.spop("setx", int.class);
+        System.out.println(setx);
+        source.del("setx");
+
+
+        source.srem("setx", int.class,213, 2312);
+
+        /*//source.sadd("setx", list.toArray(Integer[]::new));
+        List<Integer> list = List.of(2, 3, 5);
+        // source.sadd("setx", list.toArray(Integer[]::new));
+        source.sadd("setx", list.toArray(Integer[]::new));
+        source.sadd("setx", 12, 2312, 213);
+        source.sadd("setx", List.of(1011, 10222));*/
+
+    }
+
+
+
     static { // redis://:*Zhong9307!@47.111.150.118:6064?db=2
         AnyValue.DefaultAnyValue conf = new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_MAXCONNS, "1");
-        conf.addValue(CACHE_SOURCE_NODE, new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_URL, "redis://:123456@127.0.0.1:6379?db=0"));
+        conf.addValue(CACHE_SOURCE_NODES, "redis://:123456@127.0.0.1:6379?db=0");
+
         final ResourceFactory factory = ResourceFactory.create();
         final AsyncIOGroup asyncGroup = new AsyncIOGroup(8192, 16);
         asyncGroup.start();
@@ -23,22 +80,6 @@ public class RedisTest {
         //source.defaultConvert = JsonFactory.root().getConvert();
         source.init(conf);
 
-        System.out.println(source.get("a"));
-
-        //--------------------- bit ------------------------------
-        /*boolean ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax);
-        source.setBit("ax", 6, true);
-
-        ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax);
-
-        source.setBit("ax", 6, false);
-        ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax);*/
-        //--------------------- bit ------------------------------
-
-        //--------------------- bit ------------------------------
 
         /*
         source.lock("lockx", 5000);
@@ -52,67 +93,15 @@ public class RedisTest {
             int i = (short) 3;
         });
 
-        source.keysStartsWith("districtbeans").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("oss-blind-users").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("venue:drama-product-schedule-fee:rt-lbeuai84:20221217").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("venue:site-hour-fee:54f6e9b74cd7416db8d605366c1f49c2:20220729").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("rainbow").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("run").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("today").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("user").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("im:").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-        source.keysStartsWith("ios-").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-        });
-
-
         //--------------------- set ------------------------------
-        /*source.del("setx");
-         *//*
-        int[] ints = {1, 2, 3};
-        source.sadd("setx", ints);
-        *//*
+        /*
+         */
 
-        //source.sadd("setx", list.toArray(Integer[]::new));
-        List<Integer> list = List.of(2, 3, 5);
-        // source.sadd("setx", list.toArray(Integer[]::new));
-        source.sadd("setx", list.toArray(Integer[]::new));
-        source.sadd("setx", 12, 2312, 213);
-        source.sadd("setx", List.of(1011, 10222));
+        /*
 
-        source.keys("setx*").forEach(x -> {
-            System.out.println(x);
-        });
 
-        source.srem("setx", 213, 2312);
+
+
 
 
         Collection<String> setx1 = source.getCollection("setx", String.class);

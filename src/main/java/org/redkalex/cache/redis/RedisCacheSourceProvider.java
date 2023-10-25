@@ -11,19 +11,20 @@ import org.redkale.source.CacheSourceProvider;
 import org.redkale.util.AnyValue;
 
 /**
+ *
  * @author zhangjx
  */
-@Priority(1)
+@Priority(-900)
 public class RedisCacheSourceProvider implements CacheSourceProvider {
 
     @Override
     public boolean acceptsConf(AnyValue config) {
-        return new MyRedisCacheSource().acceptsConf(config);
+        return new RedisCacheSource().acceptsConf(config);
     }
 
     @Override
     public CacheSource createInstance() {
-        return new MyRedisCacheSource();
+        return new RedisCacheSource();
     }
 
 }

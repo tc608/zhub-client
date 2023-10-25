@@ -11,6 +11,7 @@ import org.redkale.util.ByteArray;
 import java.nio.charset.StandardCharsets;
 
 /**
+ *
  * @author zhangjx
  */
 public class RedisCacheReqDB extends RedisCacheRequest {
@@ -23,21 +24,19 @@ public class RedisCacheReqDB extends RedisCacheRequest {
 
     @Override
     public void writeTo(ClientConnection conn, ByteArray writer) {
-        writer.put((byte) '*');
-        writer.put((byte) '2');
-        writer.put((byte) '\r', (byte) '\n');
-        writer.put((byte) '$');
-        writer.put((byte) '6');
-        writer.put((byte) '\r', (byte) '\n');
-        writer.put("SELECT".getBytes(StandardCharsets.UTF_8));
-        writer.put((byte) '\r', (byte) '\n');
+        writer.put(mutliLengthBytes(2));
+        writer.put(bulkLengthBytes(6));
+        writer.put("SELECT\r\n".getBytes(StandardCharsets.UTF_8));
 
         byte[] dbs = String.valueOf(db).getBytes(StandardCharsets.UTF_8);
-        writer.put((byte) '$');
-        writer.put(String.valueOf(dbs.length).getBytes(StandardCharsets.UTF_8));
-        writer.put((byte) '\r', (byte) '\n');
+        writer.put(bulkLengthBytes(dbs.length));
         writer.put(dbs);
-        writer.put((byte) '\r', (byte) '\n');
+        writer.put(CRLF);
 
+    }
+
+    @Override
+    public String toString() {
+        return getClass().getSimpleName() + "{SELECT " + db + "}";
     }
 }

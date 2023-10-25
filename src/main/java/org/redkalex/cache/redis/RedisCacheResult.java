@@ -6,32 +6,45 @@
 package org.redkalex.cache.redis;
 
 import org.redkale.convert.json.JsonConvert;
+import org.redkale.net.client.ClientResult;
+import org.redkale.source.CacheScoredValue;
 
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
+ *
  * @author zhangjx
  */
-public class RedisCacheResult {
+public class RedisCacheResult implements ClientResult {
 
-    //+   简单字符串类型 (不包含CRLF)
-    //-   错误类型 (不包含CRLF)
-    //':  整型
-    //$   块字符串 
+    //$   块字符串类型
     //*   数组
+    //+   简单字符串类型
+    //-   错误类型
+    //:   整型
     protected byte frameType;
 
-    protected byte[] frameValue;  //(不包含CRLF)
+    protected byte[] frameCursor;
 
-    protected List<byte[]> frameList;  //(不包含CRLF)
+    protected byte[] frameValue;
 
-    public RedisCacheResult prepare(byte byteType, byte[] val, List<byte[]> bytesList) {
+    protected List<byte[]> frameList;
+
+    public RedisCacheResult prepare(byte byteType, byte[] frameCursor, byte[] frameValue, List<byte[]> frameList) {
         this.frameType = byteType;
-        this.frameValue = val;
-        this.frameList = bytesList;
+        this.frameCursor = frameCursor;
+        this.frameValue = frameValue;
+        this.frameList = frameList;
         return this;
+    }
+
+    @Override
+    public boolean isKeepAlive() {
+        return true;
     }
 
     public Void getVoidValue() {
@@ -42,6 +55,14 @@ public class RedisCacheResult {
         return frameValue;
     }
 
+    public int getCursor() {
+        if (frameCursor == null || frameCursor.length < 1) {
+            return -1;
+        } else {
+            return Integer.parseInt(new String(frameCursor));
+        }
+    }
+
     public Boolean getBoolValue() {
         if (frameValue == null) {
             return false;
@@ -50,34 +71,73 @@ public class RedisCacheResult {
         if ("OK".equals(val)) {
             return true;
         }
+        if (val.isEmpty()) {
+            return false;
+        }
+        for (char ch : val.toCharArray()) {
+            if (!Character.isDigit(ch)) {
+                return false;
+            }
+        }
         return Integer.parseInt(val) > 0;
     }
 
-    public String getStringValue(String key, RedisCryptor cryptor) {
+    public Double getDoubleValue(Double defValue) {
         if (frameValue == null) {
-            return null;
+            return defValue;
         }
         String val = new String(frameValue, StandardCharsets.UTF_8);
-        if (cryptor != null) {
-            val = cryptor.decrypt(key, val);
+        if ("nan".equalsIgnoreCase(val) || "-nan".equalsIgnoreCase(val)) {
+            return Double.NaN;
+        } else if ("inf".equalsIgnoreCase(val)) {
+            return Double.POSITIVE_INFINITY;
+        } else if ("-inf".equalsIgnoreCase(val)) {
+            return Double.NEGATIVE_INFINITY;
+        } else if ("-1".equalsIgnoreCase(val)) {
+            return -1.0;
+        } else if ("0".equalsIgnoreCase(val)) {
+            return 0.0;
+        } else if ("1".equalsIgnoreCase(val)) {
+            return 1.0;
+        } else {
+            return Double.parseDouble(val);
         }
-        return val;
     }
 
-    public Double getDoubleValue(Double defvalue) {
-        return frameValue == null ? defvalue : Double.parseDouble(new String(frameValue, StandardCharsets.UTF_8));
+    public Long getLongValue(Long defValue) {
+        if (frameValue == null) {
+            return defValue;
+        }
+        String val = new String(frameValue, StandardCharsets.UTF_8);
+        if ("-1".equalsIgnoreCase(val)) {
+            return -1L;
+        } else if ("0".equalsIgnoreCase(val)) {
+            return 0L;
+        } else if ("1".equalsIgnoreCase(val)) {
+            return 1L;
+        } else {
+            return Long.parseLong(val);
+        }
     }
 
-    public Long getLongValue(Long defvalue) {
-        return frameValue == null ? defvalue : Long.parseLong(new String(frameValue, StandardCharsets.UTF_8));
-    }
-
-    public Integer getIntValue(Integer defvalue) {
-        return frameValue == null ? defvalue : Integer.parseInt(new String(frameValue, StandardCharsets.UTF_8));
+    public Integer getIntValue(Integer defValue) {
+        if (frameValue == null) {
+            return defValue;
+        }
+        String val = new String(frameValue, StandardCharsets.UTF_8);
+        if ("-1".equalsIgnoreCase(val)) {
+            return -1;
+        } else if ("0".equalsIgnoreCase(val)) {
+            return 0;
+        } else if ("1".equalsIgnoreCase(val)) {
+            return 1;
+        } else {
+            return Integer.parseInt(val);
+        }
     }
 
     public <T> T getObjectValue(String key, RedisCryptor cryptor, Type type) {
-        return formatValue(key, cryptor, frameValue, type);
+        return decodeValue(key, cryptor, frameValue, type);
     }
 
     protected <T> Set<T> getSetValue(String key, RedisCryptor cryptor, Type type) {
@@ -86,7 +146,23 @@ public class RedisCacheResult {
         }
         Set<T> set = new LinkedHashSet<>();
         for (byte[] bs : frameList) {
-            set.add(formatValue(key, cryptor, bs, type));
+            set.add(decodeValue(key, cryptor, bs, type));
+        }
+        return set;
+    }
+
+    protected List<CacheScoredValue> getScoreListValue(String key, RedisCryptor cryptor, Type scoreType) {
+        if (frameList == null || frameList.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<CacheScoredValue> set = new ArrayList<>();
+        for (int i = 0; i < frameList.size(); i += 2) {
+            byte[] bs1 = frameList.get(i);
+            byte[] bs2 = frameList.get(i + 1);
+            Number val = decodeValue(key, cryptor, bs2, scoreType);
+            if (val != null) {
+                set.add(CacheScoredValue.create(val, new String(bs1, StandardCharsets.UTF_8)));
+            }
         }
         return set;
     }
@@ -97,7 +173,7 @@ public class RedisCacheResult {
         }
         List<T> list = new ArrayList<>();
         for (byte[] bs : frameList) {
-            list.add(formatValue(key, cryptor, bs, type));
+            list.add(decodeValue(key, cryptor, bs, type));
         }
         return list;
     }
@@ -110,15 +186,15 @@ public class RedisCacheResult {
         for (int i = 0; i < frameList.size(); i += 2) {
             byte[] bs1 = frameList.get(i);
             byte[] bs2 = frameList.get(i + 1);
-            T val = formatValue(key, cryptor, bs2, type);
+            T val = decodeValue(key, cryptor, bs2, type);
             if (val != null) {
-                map.put(formatValue(key, cryptor, bs1, String.class).toString(), val);
+                map.put(decodeValue(key, cryptor, bs1, String.class).toString(), val);
             }
         }
         return map;
     }
 
-    protected static <T> T formatValue(String key, RedisCryptor cryptor, byte[] frames, Type type) {
+    protected static <T> T decodeValue(String key, RedisCryptor cryptor, byte[] frames, Type type) {
         if (frames == null) {
             return null;
         }
@@ -132,11 +208,24 @@ public class RedisCacheResult {
             }
             return (T) val;
         }
-        if (type == boolean.class || type == Boolean.class) {
-            return (T) (Boolean) "t".equalsIgnoreCase(new String(frames, StandardCharsets.UTF_8));
+        if (type == int.class || type == Integer.class) {
+            return (T) (Integer) Integer.parseInt(new String(frames, StandardCharsets.UTF_8));
         }
         if (type == long.class || type == Long.class) {
             return (T) (Long) Long.parseLong(new String(frames, StandardCharsets.UTF_8));
+        }
+        if (type == float.class || type == Float.class) {
+            return (T) (Float) Float.parseFloat(new String(frames, StandardCharsets.UTF_8));
+        }
+        if (type == BigInteger.class) {
+            return (T) new BigInteger(new String(frames, StandardCharsets.UTF_8));
+        }
+        if (type == BigDecimal.class) {
+            return (T) new BigDecimal(new String(frames, StandardCharsets.UTF_8));
+        }
+        if (type == boolean.class || type == Boolean.class) {
+            String v = new String(frames, StandardCharsets.UTF_8);
+            return (T) (Boolean) ("t".equalsIgnoreCase(v) || "1".equals(v));
         }
         if (type == double.class || type == Double.class) {
             return (T) (Double) Double.parseDouble(new String(frames, StandardCharsets.UTF_8));
@@ -146,6 +235,28 @@ public class RedisCacheResult {
             return (T) JsonConvert.root().convertFrom(type, val);
         }
         return (T) JsonConvert.root().convertFrom(type, frames);
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{type: ").append(frameType);
+        if (frameValue != null) {
+            sb.append(", value: ").append(new String(frameValue, StandardCharsets.UTF_8));
+        }
+        if (frameList != null) {
+            sb.append(", list: [");
+            boolean first = true;
+            for (byte[] bs : frameList) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                sb.append(bs == null ? null : new String(bs, StandardCharsets.UTF_8));
+                first = false;
+            }
+            sb.append("]");
+        }
+        return sb.append("}").toString();
     }
 
 }
