@@ -34,7 +34,7 @@
         <repository>
             <id>maven-nexus</id>
             <name>maven-nexus</name>
-            <url>http://47.106.237.198:8081/repository/maven-public/</url>
+            <url>https://nexus.1216.top/repository/maven-public/</url>
         </repository>
     </repositories>
 
@@ -43,7 +43,7 @@
         <repository>
             <id>mvn-release</id>
             <name>mvn-release</name>
-            <url>http://47.106.237.198:8081/repository/maven-releases/</url>
+            <url>https://nexus.1216.top/repository/maven-releases/</url>
         </repository>
     </distributionManagement>
 </project>
