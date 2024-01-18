@@ -25,6 +25,8 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 @Local
 @AutoLoad(false)
 @ResourceType(ZHubClient.class)
@@ -221,110 +223,114 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }).thenAcceptAsync(x -> {
             // 定时调度事件，已加入耗时监控
             new Thread(() -> {
-                ExecutorService pool = Executors.newFixedThreadPool(1);
+                ExecutorService executor = Executors.newSingleThreadExecutor();
                 while (true) {
                     Timer timer = null;
                     try {
-                        if ((timer = timerQueue.take()) == null) {
-                            return;
-                        }
+                        timer = timerQueue.take();
                         long start = System.currentTimeMillis();
-                        pool.submit(timer.runnable).get(5, TimeUnit.SECONDS);
+                        executor.submit(timer.runnable).get(5, TimeUnit.SECONDS);
                         long end = System.currentTimeMillis();
                         logger.finest(String.format("timer [%s] : elapsed time %s ms", timer.name, end - start));
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (TimeoutException e) {
-                        logger.log(Level.SEVERE, "timer [" + timer.name + "] time out: " + 5 + " S", e);
-                        pool = Executors.newFixedThreadPool(1);
-                    } catch (Exception e) {
-                        logger.log(Level.WARNING, "timer [" + timer.name + "]", e);
+                    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                        if (e instanceof TimeoutException) {
+                            executor = Executors.newSingleThreadExecutor();
+                            logger.log(Level.WARNING, "TimeoutException [" + timer.name + "]", e);
+                        } else {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }).start();
 
             // topic msg，已加入耗时监控
             new Thread(() -> {
-                ExecutorService pool = Executors.newFixedThreadPool(1);
+                ExecutorService executor = Executors.newSingleThreadExecutor();
                 while (true) {
                     Event<String> event = null;
                     try {
-                        if ((event = topicQueue.take()) == null) {
-                            continue;
-                        }
+                        event = topicQueue.take();
+                        logger.log(Level.FINE, "topic[" + event.topic + "] :" + event.value);
 
                         String topic = event.topic;
                         String value = event.value;
-                        pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (TimeoutException e) {
-                        logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
-                        pool = Executors.newFixedThreadPool(1);
-                    } catch (Exception e) {
-                        logger.log(Level.WARNING, "topic[" + event.topic + "] event accept error :" + event.value, e);
+                        executor.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                        if (e instanceof TimeoutException) {
+                            executor = Executors.newSingleThreadExecutor();
+                            logger.log(Level.WARNING, "TimeoutException, topic[" + event.topic + "], value[" + event.value + "]", e);
+                        } else if (event != null) {
+                            logger.log(Level.WARNING, "topic[" + event.topic + "] event accept error :" + event.value, e);
+                        }
                     }
                 }
-            }).start();
+            }, "ZHub-topic-accept").start();
 
             // rpc back ,仅做数据解析，暂无耗时监控
             new Thread(() -> {
+                ExecutorService executor = Executors.newSingleThreadExecutor();
                 while (true) {
                     Event<String> event = null;
                     try {
-                        if ((event = rpcBackQueue.take()) == null) {
-                            continue;
+                        event = rpcCallQueue.take();
+                        logger.info(String.format("rpc-call:[%s] %s", event.topic, event.value));
+
+                        String topic = event.topic;
+                        String value = event.value;
+                        executor.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                        if (e instanceof TimeoutException) {
+                            executor = Executors.newSingleThreadExecutor();
+                            logger.log(Level.WARNING, "rpc-call TimeoutException, topic[" + event.topic + "], value[" + event.value + "]", e);
+                        } else if (event != null) {
+                            logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
                         }
-                        //if (event)
-                        logger.finest(String.format("rpc-back:[%s]: %s", event.topic, event.value));
-                        rpcAccept(event.value);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (Exception e) {
-                        logger.log(Level.WARNING, "rpc-back[" + event.topic + "] event accept error :" + event.value, e);
                     }
                 }
-            }).start();
+            }, "ZHub-rpc-call").start();
 
             // rpc call，已加入耗时监控
             new Thread(() -> {
-                ExecutorService pool = Executors.newFixedThreadPool(1);
+                ExecutorService executor = Executors.newSingleThreadExecutor();
                 while (true) {
                     Event<String> event = null;
                     try {
-                        if ((event = rpcCallQueue.take()) == null) {
-                            continue;
-                        }
-                        logger.finest(String.format("rpc-call:[%s] %s", event.topic, event.value));
+                        event = rpcCallQueue.take();
+                        logger.info(String.format("rpc-call:[%s] %s", event.topic, event.value));
+
                         String topic = event.topic;
                         String value = event.value;
-                        pool.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (TimeoutException e) {
-                        logger.log(Level.SEVERE, "topic[" + event.topic + "] event deal time out: " + 5 + " S, value: " + event.value, e);
-                        pool = Executors.newFixedThreadPool(1);
-                    } catch (Exception e) {
-                        logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
+                        executor.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                        if (e instanceof TimeoutException) {
+                            executor = Executors.newSingleThreadExecutor();
+                            logger.log(Level.WARNING, "rpc-call TimeoutException, topic[" + event.topic + "], value[" + event.value + "]", e);
+                        } else if (event != null) {
+                            logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
+                        }
                     }
                 }
-            }).start();
+            }, "ZHub-rpc-call").start();
 
             // send msg
             new Thread(() -> {
                 while (true) {
                     String msg = null;
                     try {
-                        if ((msg = sendMsgQueue.take()) == null) {
-                            continue;
-                        }
-                        // logger.log(Level.FINEST, "send-msg: [" + msg + "]");
-                        writer.write(msg.getBytes());
+                        msg = sendMsgQueue.take();
+                        writer.write(msg.getBytes(UTF_8));
                         writer.flush();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (Exception e) {
+                    } catch (InterruptedException | IOException e) {
                         logger.log(Level.WARNING, "send-msg[" + msg + "] event accept error :", e);
+
+                        try {
+                            Thread.sleep(5000);
+                            assert msg != null;
+                            writer.write(msg.getBytes(UTF_8));
+                            writer.flush();
+                        } catch (IOException | InterruptedException | NullPointerException ex) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }).start();
@@ -423,7 +429,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 client.setKeepAlive(true);
 
                 writer = client.getOutputStream();
-                reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                reader = new BufferedReader(new InputStreamReader(client.getInputStream(), UTF_8));
 
                 String groupid = getGroupid();
                 if (groupid == null || groupid.isEmpty()) {
