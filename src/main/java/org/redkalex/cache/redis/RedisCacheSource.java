@@ -5,139 +5,149 @@
  */
 package org.redkalex.cache.redis;
 
-import org.redkale.annotation.AutoLoad;
-import org.redkale.annotation.ResourceListener;
-import org.redkale.annotation.ResourceType;
-import org.redkale.annotation.*;
 import org.redkale.convert.Convert;
+import org.redkale.convert.bson.BsonByteBufferWriter;
 import org.redkale.convert.json.JsonConvert;
-import org.redkale.net.AsyncGroup;
-import org.redkale.net.WorkThread;
-import org.redkale.net.client.*;
+import org.redkale.convert.json.JsonFactory;
+import org.redkale.net.AsyncConnection;
+import org.redkale.net.Transport;
+import org.redkale.net.TransportFactory;
+import org.redkale.service.AbstractService;
 import org.redkale.service.Local;
-import org.redkale.source.CacheEventListener;
-import org.redkale.source.CacheScoredValue;
+import org.redkale.service.Service;
 import org.redkale.source.CacheSource;
+import org.redkale.source.Flipper;
 import org.redkale.util.*;
+import org.redkale.util.AnyValue.DefaultAnyValue;
 
+import javax.annotation.Resource;
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Type;
 import java.net.InetSocketAddress;
-import java.net.URI;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import static org.redkale.boot.Application.RESNAME_APP_CLIENT_ASYNCGROUP;
-import static org.redkale.boot.Application.RESNAME_APP_EXECUTOR;
-import static org.redkale.util.Utility.isEmpty;
-import static org.redkale.util.Utility.isNotEmpty;
-import static org.redkalex.cache.redis.RedisCacheRequest.BYTES_COUNT;
-import static org.redkalex.cache.redis.RedisCacheRequest.BYTES_MATCH;
 
 /**
  * 详情见: https://redkale.org
  *
- *
+ * @param <V> Value
  * @author zhangjx
  */
 @Local
 @AutoLoad(false)
 @ResourceType(CacheSource.class)
-public class RedisCacheSource extends AbstractRedisSource {
+public class RedisCacheSource<V extends Object> extends AbstractService implements CacheSource<V>, Service, AutoCloseable, Resourcable {
 
-    static final boolean debug = false; //System.getProperty("os.name").contains("Window") || System.getProperty("os.name").contains("Mac");
+    protected static final byte DOLLAR_BYTE = '$';
 
-    protected static final byte[] NX = "NX".getBytes();
+    protected static final byte ASTERISK_BYTE = '*';
 
-    protected static final byte[] EX = "EX".getBytes();
+    protected static final byte PLUS_BYTE = '+';
 
-    protected static final byte[] CHANNELS = "CHANNELS".getBytes();
+    protected static final byte MINUS_BYTE = '-';
 
-    private final Logger logger = Logger.getLogger(getClass().getSimpleName());
+    protected static final byte COLON_BYTE = ':';
 
-    @Resource(name = RESNAME_APP_CLIENT_ASYNCGROUP, required = false)
-    private AsyncGroup clientAsyncGroup;
+    private final Logger logger = Logger.getLogger(this.getClass().getSimpleName());
 
-    //配置<executor threads="0"> APP_EXECUTOR资源为null
-    @Resource(name = RESNAME_APP_EXECUTOR, required = false)
-    private ExecutorService workExecutor;
+    @Resource
+    protected JsonConvert defaultConvert;
 
-    private RedisCacheClient client;
+    @Resource(name = "$_convert")
+    protected JsonConvert convert;
 
-    private InetSocketAddress address;
+    protected Type objValueType = String.class;
 
-    private RedisCacheConnection subConn;
+    protected Map<SocketAddress, byte[]> passwords;
 
-    private final ReentrantLock pubsubLock = new ReentrantLock();
+    protected List<InetSocketAddress> nodeAddrs;
 
-    //key: topic
-    private final Map<String, CopyOnWriteArraySet<CacheEventListener<byte[]>>> pubsubListeners = new ConcurrentHashMap<>();
+    protected int db;
+
+    protected Transport transport;
 
     @Override
     public void init(AnyValue conf) {
-        super.init(conf);
-        if (conf == null) {
-            conf = AnyValue.create();
+        if (this.convert == null) this.convert = this.defaultConvert;
+        if (conf == null) conf = new DefaultAnyValue();
+
+        AnyValue prop = conf.getAnyValue("properties");
+        if (prop != null) {
+            String storeValueStr = prop.getValue("value-type");
+            if (storeValueStr != null) {
+                try {
+                    this.initValueType(Thread.currentThread().getContextClassLoader().loadClass(storeValueStr));
+                } catch (Throwable e) {
+                    logger.log(Level.SEVERE, this.getClass().getSimpleName() + " load key & value store class (" + storeValueStr + ") error", e);
+                }
+            }
         }
-        initClient(conf);
+        final int bufferCapacity = conf.getIntValue("bufferCapacity", 8 * 1024);
+        final int bufferPoolSize = conf.getIntValue("bufferPoolSize", Runtime.getRuntime().availableProcessors() * 8);
+        final int threads = conf.getIntValue("threads", Runtime.getRuntime().availableProcessors() * 8);
+        final int readTimeoutSeconds = conf.getIntValue("readTimeoutSeconds", TransportFactory.DEFAULT_READTIMEOUTSECONDS);
+        final int writeTimeoutSeconds = conf.getIntValue("writeTimeoutSeconds", TransportFactory.DEFAULT_WRITETIMEOUTSECONDS);
+        final List<InetSocketAddress> addresses = new ArrayList<>();
+        Map<SocketAddress, byte[]> passwords0 = new HashMap<>();
+        for (AnyValue node : conf.getAnyValues("node")) {
+            String addrstr = node.getValue("addr");
+            InetSocketAddress addr = null;
+            if (addrstr.startsWith("redis://")) {
+                addrstr = addrstr.substring("redis://".length());
+                int pos = addrstr.indexOf(':');
+                addr = new InetSocketAddress(addrstr.substring(0, pos), Integer.parseInt(addrstr.substring(pos + 1)));
+                addresses.add(addr);
+            } else {
+                addr = new InetSocketAddress(addrstr, node.getIntValue("port"));
+                addresses.add(addr);
+            }
+            String password = node.getValue("password", "").trim();
+            if (!password.isEmpty()) passwords0.put(addr, password.getBytes(StandardCharsets.UTF_8));
+            String db0 = node.getValue("db", "").trim();
+            if (!db0.isEmpty()) this.db = Integer.valueOf(db0);
+        }
+        if (!passwords0.isEmpty()) this.passwords = passwords0;
+        this.nodeAddrs = addresses;
+        TransportFactory transportFactory = TransportFactory.create(threads, bufferPoolSize, bufferCapacity, readTimeoutSeconds, writeTimeoutSeconds);
+        this.transport = transportFactory.createTransportTCP("Redis-Transport", null, addresses);
+        this.transport.setSemaphore(new Semaphore(conf.getIntValue("maxconns", threads)));
+        if (logger.isLoggable(Level.FINE)) logger.log(Level.FINE, RedisCacheSource.class.getSimpleName() + ": addrs=" + addresses + ", db=" + db);
+
     }
 
-    private void initClient(AnyValue conf) {
-        RedisConfig config = RedisConfig.create(conf);
-        if (config.getAddresses().size() != 1) {
-            throw new RedkaleException("Only one address supported for " + getClass().getSimpleName());
+    @Override //ServiceLoader时判断配置是否符合当前实现类
+    public boolean match(AnyValue config) {
+        if (config == null) return false;
+        AnyValue[] nodes = config.getAnyValues("node");
+        if (nodes == null || nodes.length == 0) return false;
+        for (AnyValue node : nodes) {
+            if (node.getValue("addr") != null && node.getValue("port") != null) return true;
+            if (node.getValue("addr") != null && node.getValue("addr").startsWith("redis://")) return true;
         }
-        String oneAddr = config.getAddresses().get(0);
-        if (oneAddr.contains("://")) {
-            URI uri = URI.create(oneAddr);
-            address = new InetSocketAddress(uri.getHost(), uri.getPort() > 0 ? uri.getPort() : 6379);
-        } else {
-            int pos = oneAddr.indexOf(':');
-            address = new InetSocketAddress(pos < 0 ? oneAddr : oneAddr.substring(0, pos), pos < 0 ? 6379 : Integer.parseInt(oneAddr.substring(pos + 1)));
-        }
-        AsyncGroup ioGroup = clientAsyncGroup;
-        if (clientAsyncGroup == null) {
-            String f = "Redkalex-Redis-IOThread-" + resourceName() + "-%s";
-            ioGroup = AsyncGroup.create(f, workExecutor, 16 * 1024, Utility.cpus() * 4).start();
-        }
-        RedisCacheClient old = this.client;
-        this.client = new RedisCacheClient(appName, resourceName(), ioGroup, resourceName() + "." + config.getDb(),
-            new ClientAddress(address), config.getMaxconns(Runtime.getRuntime().availableProcessors()), config.getPipelines(),
-            isEmpty(config.getPassword()) ? null : new RedisCacheReqAuth(config.getPassword()),
-            config.getDb() < 1 ? null : new RedisCacheReqDB(config.getDb()));
-        if (this.subConn != null) {
-            this.subConn.dispose(null);
-            this.subConn = null;
-        }
-        if (old != null) {
-            old.close();
-        }
-        if (!pubsubListeners.isEmpty()) {
-            subConn().join();
-        }
-        //if (logger.isLoggable(Level.FINE)) logger.log(Level.FINE, RedisCacheSource.class.getSimpleName() + ": addr=" + address + ", db=" + db);
+        return false;
+    }
+
+    public void updateRemoteAddresses(final Collection<InetSocketAddress> addresses) {
+        this.transport.updateRemoteAddresses(addresses);
     }
 
     @Override
-    @ResourceListener
-    public void onResourceChange(ResourceEvent[] events) {
-        if (events == null || events.length < 1) {
-            return;
-        }
-        StringBuilder sb = new StringBuilder();
-        for (ResourceEvent event : events) {
-            sb.append("CacheSource(name=").append(resourceName()).append(") change '").append(event.name()).append("' to '").append(event.coverNewValue()).append("'\r\n");
-        }
-        initClient(this.conf);
-        if (sb.length() > 0) {
-            logger.log(Level.INFO, sb.toString());
-        }
+    @Deprecated
+    public final void initValueType(Type valueType) {
+        this.objValueType = valueType == null ? String.class : valueType;
+    }
+
+    @Override
+    @Deprecated
+    public final void initTransient(boolean flag) {
     }
 
     @Override
@@ -145,1064 +155,839 @@ public class RedisCacheSource extends AbstractRedisSource {
         return "redis";
     }
 
+    public static void main(String[] args) throws Exception {
+        DefaultAnyValue conf = new DefaultAnyValue().addValue("maxconns", "1");
+        conf.addValue("node", new DefaultAnyValue().addValue("addr", "127.0.0.1").addValue("port", "6363"));
+
+        RedisCacheSource source = new RedisCacheSource();
+        source.defaultConvert = JsonFactory.root().getConvert();
+        source.init(conf);
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 7788);
+        try {
+            System.out.println("------------------------------------");
+            source.removeAsync("stritem1");
+            source.removeAsync("stritem2");
+            source.setStringAsync("stritem1", "value1");
+            source.setStringAsync("stritem2", "value2");
+            System.out.println("stritem开头的key有两个: " + source.queryKeysStartsWith("stritem"));
+            System.out.println("[有值] MGET : " + source.getStringMap("stritem1", "stritem2"));
+            System.out.println("[有值] MGET : " + Arrays.toString(source.getStringArray("stritem1", "stritem2")));
+
+            source.remove("intitem1");
+            source.remove("intitem2");
+            source.setLong("intitem1", 333);
+            source.setLong("intitem2", 444);
+            System.out.println("[有值] MGET : " + source.getStringMap("intitem1", "intitem22", "intitem2"));
+            System.out.println("[有值] MGET : " + Arrays.toString(source.getStringArray("intitem1", "intitem22", "intitem2")));
+            source.remove("objitem1");
+            source.remove("objitem2");
+            source.set("objitem1", Flipper.class, new Flipper(10));
+            source.set("objitem2", Flipper.class, new Flipper(20));
+            System.out.println("[有值] MGET : " + source.getMap(Flipper.class, "objitem1", "objitem2"));
+
+            source.remove("key1");
+            source.remove("key2");
+            source.remove("300");
+            source.set(1000, "key1", String.class, "value1");
+            source.set("key1", String.class, "value1");
+            source.setString("keystr1", "strvalue1");
+            source.setLong("keylong1", 333L);
+            source.set("300", String.class, "4000");
+            source.getAndRefresh("key1", 3500, String.class);
+            System.out.println("[有值] 300 GET : " + source.get("300", String.class));
+            System.out.println("[有值] key1 GET : " + source.get("key1", String.class));
+            System.out.println("[无值] key2 GET : " + source.get("key2", String.class));
+            System.out.println("[有值] keystr1 GET : " + source.getString("keystr1"));
+            System.out.println("[有值] keylong1 GET : " + source.getLong("keylong1", 0L));
+            System.out.println("[有值] key1 EXISTS : " + source.exists("key1"));
+            System.out.println("[无值] key2 EXISTS : " + source.exists("key2"));
+
+            source.remove("keys3");
+            source.appendListItem("keys3", String.class, "vals1");
+            source.appendListItem("keys3", String.class, "vals2");
+            System.out.println("-------- keys3 追加了两个值 --------");
+            System.out.println("[两值] keys3 VALUES : " + source.getCollection("keys3", String.class));
+            System.out.println("[有值] keys3 EXISTS : " + source.exists("keys3"));
+            source.removeListItem("keys3", String.class, "vals1");
+            System.out.println("[一值] keys3 VALUES : " + source.getCollection("keys3", String.class));
+            source.getCollectionAndRefresh("keys3", 3000, String.class);
+
+            source.remove("stringmap");
+            source.appendSetItem("stringmap", JsonConvert.TYPE_MAP_STRING_STRING, Utility.ofMap("a", "aa", "b", "bb"));
+            source.appendSetItem("stringmap", JsonConvert.TYPE_MAP_STRING_STRING, Utility.ofMap("c", "cc", "d", "dd"));
+            System.out.println("[两值] stringmap VALUES : " + source.getCollectionAsync("stringmap", JsonConvert.TYPE_MAP_STRING_STRING).join());
+
+            source.remove("sets3");
+            source.remove("sets4");
+            source.appendSetItem("sets3", String.class, "setvals1");
+            source.appendSetItem("sets3", String.class, "setvals2");
+            source.appendSetItem("sets3", String.class, "setvals1");
+            source.appendSetItem("sets4", String.class, "setvals2");
+            source.appendSetItem("sets4", String.class, "setvals1");
+            System.out.println("[两值] sets3 VALUES : " + source.getCollection("sets3", String.class));
+            System.out.println("[有值] sets3 EXISTS : " + source.exists("sets3"));
+            System.out.println("[有值] sets3-setvals2 EXISTSITEM : " + source.existsSetItem("sets3", String.class, "setvals2"));
+            System.out.println("[有值] sets3-setvals3 EXISTSITEM : " + source.existsSetItem("sets3", String.class, "setvals3"));
+            source.removeSetItem("sets3", String.class, "setvals1");
+            System.out.println("[一值] sets3 VALUES : " + source.getCollection("sets3", String.class));
+            System.out.println("sets3 大小 : " + source.getCollectionSize("sets3"));
+            System.out.println("all keys: " + source.queryKeys());
+            System.out.println("key startkeys: " + source.queryKeysStartsWith("key"));
+            System.out.println("newnum 值 : " + source.incr("newnum"));
+            System.out.println("newnum 值 : " + source.decr("newnum"));
+            System.out.println("sets3&sets4:  " + source.getStringCollectionMap(true, "sets3", "sets4"));
+            System.out.println("------------------------------------");
+            source.set("myaddr", InetSocketAddress.class, addr);
+            System.out.println("myaddrstr:  " + source.getString("myaddr"));
+            System.out.println("myaddr:  " + source.get("myaddr", InetSocketAddress.class));
+            source.remove("myaddrs");
+            source.remove("myaddrs2");
+            source.appendSetItem("myaddrs", InetSocketAddress.class, new InetSocketAddress("127.0.0.1", 7788));
+            source.appendSetItem("myaddrs", InetSocketAddress.class, new InetSocketAddress("127.0.0.1", 7799));
+            System.out.println("myaddrs:  " + source.getCollection("myaddrs", InetSocketAddress.class));
+            source.removeSetItem("myaddrs", InetSocketAddress.class, new InetSocketAddress("127.0.0.1", 7788));
+            System.out.println("myaddrs:  " + source.getCollection("myaddrs", InetSocketAddress.class));
+            source.appendSetItem("myaddrs2", InetSocketAddress.class, new InetSocketAddress("127.0.0.1", 7788));
+            source.appendSetItem("myaddrs2", InetSocketAddress.class, new InetSocketAddress("127.0.0.1", 7799));
+            System.out.println("myaddrs&myaddrs2:  " + source.getCollectionMap(true, InetSocketAddress.class, "myaddrs", "myaddrs2"));
+            System.out.println("------------------------------------");
+            source.remove("myaddrs");
+            Type mapType = new TypeToken<Map<String, Integer>>() {
+            }.getType();
+            Map<String, Integer> map = new HashMap<>();
+            map.put("a", 1);
+            map.put("b", 2);
+            source.set("mapvals", mapType, map);
+            System.out.println("mapvals:  " + source.get("mapvals", mapType));
+
+            source.remove("byteskey");
+            source.setBytes("byteskey", new byte[]{1, 2, 3});
+            System.out.println("byteskey 值 : " + Arrays.toString(source.getBytes("byteskey")));
+            //h
+            source.remove("hmap");
+            source.hincr("hmap", "key1");
+            System.out.println("hmap.key1 值 : " + source.hgetLong("hmap", "key1", -1));
+            source.hmset("hmap", "key2", "haha", "key3", 333);
+            source.hmset("hmap", "sm", (HashMap) Utility.ofMap("a", "aa", "b", "bb"));
+            System.out.println("hmap.sm 值 : " + source.hget("hmap", "sm", JsonConvert.TYPE_MAP_STRING_STRING));
+            System.out.println("hmap.[key1,key2,key3] 值 : " + source.hmget("hmap", String.class, "key1", "key2", "key3"));
+            System.out.println("hmap.keys 四值 : " + source.hkeys("hmap"));
+            source.hremove("hmap", "key1", "key3");
+            System.out.println("hmap.keys 两值 : " + source.hkeys("hmap"));
+            System.out.println("hmap.key2 值 : " + source.hgetString("hmap", "key2"));
+            System.out.println("hmap列表(2)大小 : " + source.hsize("hmap"));
+
+            source.remove("hmaplong");
+            source.hincr("hmaplong", "key1", 10);
+            source.hsetLong("hmaplong", "key2", 30);
+            System.out.println("hmaplong.所有两值 : " + source.hmap("hmaplong", long.class, 0, 10));
+
+            source.remove("hmapstr");
+            source.hsetString("hmapstr", "key1", "str10");
+            source.hsetString("hmapstr", "key2", null);
+            System.out.println("hmapstr.所有一值 : " + source.hmap("hmapstr", String.class, 0, 10));
+
+            source.remove("hmapstrmap");
+            source.hset("hmapstrmap", "key1", JsonConvert.TYPE_MAP_STRING_STRING, (HashMap) Utility.ofMap("ks11", "vv11"));
+            source.hset("hmapstrmap", "key2", JsonConvert.TYPE_MAP_STRING_STRING, null);
+            System.out.println("hmapstrmap.无值 : " + source.hmap("hmapstrmap", JsonConvert.TYPE_MAP_STRING_STRING, 0, 10, "key2*"));
+
+            source.remove("popset");
+            source.appendStringSetItem("popset", "111");
+            source.appendStringSetItem("popset", "222");
+            source.appendStringSetItem("popset", "333");
+            source.appendStringSetItem("popset", "444");
+            source.appendStringSetItem("popset", "555");
+            System.out.println("SPOP一个元素：" + source.spopStringSetItem("popset"));
+            System.out.println("SPOP两个元素：" + source.spopStringSetItem("popset", 2));
+            System.out.println("SPOP五个元素：" + source.spopStringSetItem("popset", 5));
+            source.appendLongSetItem("popset", 111);
+            source.appendLongSetItem("popset", 222);
+            source.appendLongSetItem("popset", 333);
+            source.appendLongSetItem("popset", 444);
+            source.appendLongSetItem("popset", 555);
+            System.out.println("SPOP一个元素：" + source.spopLongSetItem("popset"));
+            System.out.println("SPOP两个元素：" + source.spopLongSetItem("popset", 2));
+            System.out.println("SPOP五个元素：" + source.spopLongSetItem("popset", 5));
+            System.out.println("SPOP一个元素：" + source.spopLongSetItem("popset"));
+
+            //清除
+            int rs = source.remove("stritem1");
+            System.out.println("删除stritem1个数: " + rs);
+            source.remove("popset");
+            source.remove("stritem2");
+            source.remove("intitem1");
+            source.remove("intitem2");
+            source.remove("keylong1");
+            source.remove("keystr1");
+            source.remove("mapvals");
+            source.remove("myaddr");
+            source.remove("myaddrs2");
+            source.remove("newnum");
+            source.remove("objitem1");
+            source.remove("objitem2");
+            source.remove("key1");
+            source.remove("key2");
+            source.remove("keys3");
+            source.remove("sets3");
+            source.remove("sets4");
+            source.remove("myaddrs");
+            source.remove("300");
+            source.remove("stringmap");
+            source.remove("hmap");
+            source.remove("hmaplong");
+            source.remove("hmapstr");
+            source.remove("hmapstrmap");
+            source.remove("byteskey");
+            System.out.println("------------------------------------");
+//        System.out.println("--------------测试大文本---------------");
+//        HashMap<String, String> bigmap = new HashMap<>();
+//        StringBuilder sb = new StringBuilder();
+//        sb.append("起始");
+//        for (int i = 0; i < 1024 * 1024; i++) {
+//            sb.append("abcde");
+//        }
+//        sb.append("结束");
+//        bigmap.put("val", sb.toString());
+//        System.out.println("文本长度: " + sb.length());
+//        source.set("bigmap", JsonConvert.TYPE_MAP_STRING_STRING, bigmap);
+//        System.out.println("写入完成");
+//        for (int i = 0; i < 1; i++) {
+//            HashMap<String, String> fs = (HashMap) source.get("bigmap", JsonConvert.TYPE_MAP_STRING_STRING);
+//            System.out.println("内容长度: " + fs.get("val").length());
+//        }
+            source.remove("bigmap");
+
+        } finally {
+            source.close();
+        }
+    }
+
+    @Override
+    public void close() throws Exception {  //在 Application 关闭时调用
+        destroy(null);
+    }
+
+    @Override
+    public String resourceName() {
+        Resource res = this.getClass().getAnnotation(Resource.class);
+        return res == null ? "" : res.name();
+    }
+
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "{name=" + resourceName() + ", addrs=" + this.address + ", db=" + this.db + "}";
+        return getClass().getSimpleName() + "{addrs = " + this.nodeAddrs + ", db=" + this.db + "}";
     }
 
     @Override
     public void destroy(AnyValue conf) {
-        super.destroy(conf);
-        if (client != null) {
-            client.close();
-        }
-    }
-
-    protected CompletableFuture<RedisCacheConnection> subConn() {
-        RedisCacheConnection conn = this.subConn;
-        if (conn != null) {
-            return CompletableFuture.completedFuture(conn);
-        }
-        return client.newConnection().thenApply(r -> {
-            pubsubLock.lock();
-            try {
-                if (subConn == null) {
-                    subConn = r;
-                    r.getCodec().withMessageListener(new ClientMessageListener() {
-                        @Override
-                        public void onMessage(ClientConnection conn, ClientResponse resp) {
-                            if (resp.getCause() == null) {
-                                RedisCacheResult result = (RedisCacheResult) resp.getMessage();
-                                if (result.getFrameValue() == null) {
-                                    List<byte[]> events = result.getListValue(null, null, byte[].class);
-                                    String type = new String(events.get(0), StandardCharsets.UTF_8);
-                                    if (events.size() == 3 && "message".equals(type)) {
-                                        String channel = new String(events.get(1), StandardCharsets.UTF_8);
-                                        Set<CacheEventListener<byte[]>> set = pubsubListeners.get(channel);
-                                        if (set != null) {
-                                            byte[] msg = events.get(2);
-                                            for (CacheEventListener item : set) {
-                                                subExecutor().execute(() -> {
-                                                    try {
-                                                        item.onMessage(channel, msg);
-                                                    } catch (Throwable t) {
-                                                        logger.log(Level.SEVERE, "CacheSource subscribe message error, topic: " + channel, t);
-                                                    }
-                                                });
-                                            }
-                                        }
-                                    } else {
-                                        RedisCacheRequest request = ((RedisCacheCodec) conn.getCodec()).nextRequest();
-                                        ClientFuture respFuture = ((RedisCacheConnection) conn).pollRespFuture(request.getRequestid());
-                                        respFuture.complete(result);
-                                    }
-                                } else {
-                                    RedisCacheRequest request = ((RedisCacheCodec) conn.getCodec()).nextRequest();
-                                    ClientFuture respFuture = ((RedisCacheConnection) conn).pollRespFuture(request.getRequestid());
-                                    respFuture.complete(result);
-                                }
-                            } else {
-                                RedisCacheRequest request = ((RedisCacheCodec) conn.getCodec()).nextRequest();
-                                ClientFuture respFuture = ((RedisCacheConnection) conn).pollRespFuture(request.getRequestid());
-                                respFuture.completeExceptionally(resp.getCause());
-                            }
-                        }
-
-                        public void onClose(ClientConnection conn) {
-                            subConn = null;
-                        }
-                    });
-                    //重连时重新订阅
-                    if (!pubsubListeners.isEmpty()) {
-                        final Map<CacheEventListener<byte[]>, HashSet<String>> listeners = new HashMap<>();
-                        pubsubListeners.forEach((t, s) -> {
-                            s.forEach(l -> listeners.computeIfAbsent(l, x -> new HashSet<>()).add(t));
-                        });
-                        listeners.forEach((listener, topics) -> {
-                            subscribeAsync(listener, topics.toArray(Creator.funcStringArray()));
-                        });
-                    }
-                }
-                return subConn;
-            } finally {
-                pubsubLock.unlock();
-            }
-        });
-    }
-
-    @Override
-    public CompletableFuture<Boolean> isOpenAsync() {
-        return CompletableFuture.completedFuture(client != null);
-    }
-
-    //------------------------ 订阅发布 SUB/PUB ------------------------     
-    @Override
-    public CompletableFuture<List<String>> pubsubChannelsAsync(@Nullable String pattern) {
-        CompletableFuture<RedisCacheResult> future = pattern == null ? sendAsync(RedisCommand.PUBSUB, "CHANNELS", CHANNELS)
-            : sendAsync(RedisCommand.PUBSUB, "CHANNELS", CHANNELS, pattern.getBytes(StandardCharsets.UTF_8));
-        return future.thenApply(v -> v.getListValue("CHANNELS", null, String.class));
-    }
-
-    @Override
-    public CompletableFuture<Void> subscribeAsync(CacheEventListener<byte[]> listener, String... topics) {
-        Objects.requireNonNull(listener);
-        if (topics == null || topics.length < 1) {
-            throw new RedkaleException("topics is empty");
-        }
-        WorkThread workThread = WorkThread.currentWorkThread();
-        String traceid = Traces.currentTraceid();
-        return subConn()
-            .thenCompose(conn
-                -> conn.writeRequest(conn.pollRequest(workThread, traceid).prepare(RedisCommand.SUBSCRIBE, null, keysArgs(topics)))
-                .thenApply(v -> {
-                    for (String topic : topics) {
-                        pubsubListeners.computeIfAbsent(topic, y -> new CopyOnWriteArraySet<>()).add(listener);
-                    }
-                    return null;
-                })
-            );
-    }
-
-    @Override
-    public CompletableFuture<Integer> unsubscribeAsync(CacheEventListener listener, String... topics) {
-        if (listener == null) { //清掉指定topic的所有订阅者            
-            Set<String> delTopics = new HashSet<>();
-            if (topics == null || topics.length < 1) {
-                delTopics.addAll(pubsubListeners.keySet());
-            } else {
-                delTopics.addAll(Arrays.asList(topics));
-            }
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            delTopics.forEach(topic -> {
-                futures.add(subConn().thenCompose(conn -> conn.writeRequest(RedisCacheRequest.create(RedisCommand.UNSUBSCRIBE, topic, topic.getBytes(StandardCharsets.UTF_8)))
-                    .thenApply(r -> {
-                        pubsubListeners.remove(topic);
-                        return null;
-                    })
-                ));
-            });
-            return returnFutureSize(futures);
-        } else {  //清掉指定topic的指定订阅者         
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            for (String topic : topics) {
-                CopyOnWriteArraySet<CacheEventListener<byte[]>> listens = pubsubListeners.get(topic);
-                if (listens == null) {
-                    continue;
-                }
-                listens.remove(listener);
-                if (listens.isEmpty()) {
-                    futures.add(subConn().thenCompose(conn -> conn.writeRequest(RedisCacheRequest.create(RedisCommand.UNSUBSCRIBE, topic, topic.getBytes(StandardCharsets.UTF_8)))
-                        .thenApply(r -> {
-                            pubsubListeners.remove(topic);
-                            return null;
-                        })
-                    ));
-                }
-            }
-            return returnFutureSize(futures);
-        }
-    }
-
-    @Override
-    public CompletableFuture<Integer> publishAsync(String topic, byte[] message) {
-        Objects.requireNonNull(topic);
-        Objects.requireNonNull(message);
-        return sendAsync(RedisCommand.PUBLISH, topic, topic.getBytes(StandardCharsets.UTF_8), message).thenApply(v -> v.getIntValue(0));
+        if (transport != null) transport.close();
     }
 
     //--------------------- exists ------------------------------
     @Override
     public CompletableFuture<Boolean> existsAsync(String key) {
-        return sendAsync(RedisCommand.EXISTS, key, keyArgs(key)).thenApply(v -> v.getIntValue(0) > 0);
+        return (CompletableFuture) send("EXISTS", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public boolean exists(String key) {
+        return existsAsync(key).join();
     }
 
     //--------------------- get ------------------------------
     @Override
+    @Deprecated
+    public CompletableFuture<V> getAsync(String key) {
+        return (CompletableFuture) send("GET", CacheEntryType.OBJECT, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
     public <T> CompletableFuture<T> getAsync(String key, Type type) {
-        return sendAsync(RedisCommand.GET, key, keyArgs(key)).thenApply(v -> v.getObjectValue(key, cryptor, type));
-    }
-
-    //--------------------- getex ------------------------------
-    @Override
-    public <T> CompletableFuture<T> getexAsync(String key, int expireSeconds, final Type type) {
-        return sendAsync(RedisCommand.GETEX, key, keyArgs(key, "EX", expireSeconds)).thenApply(v -> v.getObjectValue(key, cryptor, type));
+        return (CompletableFuture) send("GET", CacheEntryType.OBJECT, type, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Void> msetAsync(final Serializable... keyVals) {
-        if (keyVals.length % 2 != 0) {
-            throw new RedkaleException("key value must be paired");
-        }
-        return sendAsync(RedisCommand.MSET, keyVals[0].toString(), keymArgs(keyVals)).thenApply(v -> v.getVoidValue());
+    public CompletableFuture<String> getStringAsync(String key) {
+        return (CompletableFuture) send("GET", CacheEntryType.STRING, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Void> msetAsync(final Map map) {
-        if (isEmpty(map)) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return sendAsync(RedisCommand.MSET, map.keySet().stream().findFirst().orElse("").toString(), keymArgs(map)).thenApply(v -> v.getVoidValue());
+    public CompletableFuture<Long> getLongAsync(String key, long defValue) {
+        return ((CompletableFuture) send("GET", CacheEntryType.LONG, (Type) null, key, key.getBytes(StandardCharsets.UTF_8))).thenApplyAsync(v -> v == null ? defValue : v);
     }
 
-    //--------------------- setex ------------------------------
+    @Override
+    @Deprecated
+    public V get(String key) {
+        return getAsync(key).join();
+    }
+
+    @Override
+    public <T> T get(String key, final Type type) {
+        return (T) getAsync(key, type).join();
+    }
+
+    @Override
+    public String getString(String key) {
+        return getStringAsync(key).join();
+    }
+
+    @Override
+    public long getLong(String key, long defValue) {
+        return getLongAsync(key, defValue).join();
+    }
+
+    //--------------------- getAndRefresh ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<V> getAndRefreshAsync(String key, int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getAsync(key));
+    }
+
+    @Override
+    public <T> CompletableFuture<T> getAndRefreshAsync(String key, int expireSeconds, final Type type) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getAsync(key, type));
+    }
+
+    @Override
+    @Deprecated
+    public V getAndRefresh(String key, final int expireSeconds) {
+        return getAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    @Override
+    public <T> T getAndRefresh(String key, final int expireSeconds, final Type type) {
+        return (T) getAndRefreshAsync(key, expireSeconds, type).join();
+    }
+
+    @Override
+    public CompletableFuture<String> getStringAndRefreshAsync(String key, int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getStringAsync(key));
+    }
+
+    @Override
+    public String getStringAndRefresh(String key, final int expireSeconds) {
+        return getStringAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    @Override
+    public CompletableFuture<Long> getLongAndRefreshAsync(String key, int expireSeconds, long defValue) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getLongAsync(key, defValue));
+    }
+
+    @Override
+    public long getLongAndRefresh(String key, final int expireSeconds, long defValue) {
+        return getLongAndRefreshAsync(key, expireSeconds, defValue).join();
+    }
+
+    //--------------------- refresh ------------------------------
+    @Override
+    public CompletableFuture<Void> refreshAsync(String key, int expireSeconds) {
+        return setExpireSecondsAsync(key, expireSeconds);
+    }
+
+    @Override
+    public void refresh(String key, final int expireSeconds) {
+        setExpireSeconds(key, expireSeconds);
+    }
+
+    //--------------------- set ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Void> setAsync(String key, V value) {
+        CacheEntryType cet = this.objValueType == String.class ? CacheEntryType.STRING : CacheEntryType.OBJECT;
+        return (CompletableFuture) send("SET", cet, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(cet, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setAsync(String key, Convert convert, T value) {
+        CacheEntryType cet = value instanceof CharSequence ? CacheEntryType.STRING : CacheEntryType.OBJECT;
+        return (CompletableFuture) send("SET", cet, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(cet, convert, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setAsync(String key, final Type type, T value) {
+        CacheEntryType cet = type == String.class ? CacheEntryType.STRING : CacheEntryType.OBJECT;
+        return (CompletableFuture) send("SET", cet, type, key, key.getBytes(StandardCharsets.UTF_8), formatValue(cet, (Convert) null, type, value));
+    }
+
     @Override
     public <T> CompletableFuture<Void> setAsync(String key, Convert convert, final Type type, T value) {
-        return sendAsync(RedisCommand.SET, key, keyArgs(key, convert, type, value)).thenApply(v -> v.getVoidValue());
+        CacheEntryType cet = type == String.class ? CacheEntryType.STRING : CacheEntryType.OBJECT;
+        return (CompletableFuture) send("SET", cet, type, key, key.getBytes(StandardCharsets.UTF_8), formatValue(cet, convert, type, value));
     }
 
     @Override
-    public <T> CompletableFuture<Boolean> setnxAsync(String key, Convert convert, final Type type, T value) {
-        return sendAsync(RedisCommand.SETNX, key, keyArgs(key, convert, type, value)).thenApply(v -> v.getBoolValue());
+    @Deprecated
+    public void set(final String key, V value) {
+        setAsync(key, value).join();
     }
 
     @Override
-    public <T> CompletableFuture<T> getSetAsync(String key, Convert convert, final Type type, T value) {
-        return sendAsync(RedisCommand.GETSET, key, keyArgs(key, convert, type, value)).thenApply(v -> v.getObjectValue(key, cryptor, type));
+    public <T> void set(final String key, final Convert convert, T value) {
+        setAsync(key, convert, value).join();
     }
 
     @Override
-    public <T> CompletableFuture<T> getDelAsync(String key, final Type type) {
-        return sendAsync(RedisCommand.GETDEL, key, keyArgs(key)).thenApply(v -> v.getObjectValue(key, cryptor, type));
-    }
-
-    //--------------------- setex ------------------------------    
-    @Override
-    public <T> CompletableFuture<Void> setexAsync(String key, int expireSeconds, Convert convert, final Type type, T value) {
-        return sendAsync(RedisCommand.SETEX, key, keyArgs(key, expireSeconds, convert, type, value)).thenApply(v -> v.getVoidValue());
+    public <T> void set(final String key, final Type type, T value) {
+        setAsync(key, type, value).join();
     }
 
     @Override
-    public <T> CompletableFuture<Boolean> setnxexAsync(String key, int expireSeconds, Convert convert, final Type type, T value) {
-        return sendAsync(RedisCommand.SET, key, keyArgs(key, expireSeconds, NX, EX, convert, type, value)).thenApply(v -> v.getBoolValue());
-    }
-
-    //--------------------- expire ------------------------------    
-    @Override
-    public CompletableFuture<Void> expireAsync(String key, int expireSeconds) {
-        return sendAsync(RedisCommand.EXPIRE, key, keyArgs(key, expireSeconds)).thenApply(v -> v.getVoidValue());
-    }
-
-    //--------------------- persist ------------------------------    
-    @Override
-    public CompletableFuture<Boolean> persistAsync(String key) {
-        return sendAsync(RedisCommand.PERSIST, key, keyArgs(key)).thenApply(v -> v.getBoolValue());
-    }
-
-    //--------------------- rename ------------------------------    
-    @Override
-    public CompletableFuture<Boolean> renameAsync(String oldKey, String newKey) {
-        return sendAsync(RedisCommand.RENAME, oldKey, keysArgs(oldKey, newKey)).thenApply(v -> v.getBoolValue());
+    public <T> void set(String key, final Convert convert, final Type type, T value) {
+        setAsync(key, convert, type, value).join();
     }
 
     @Override
-    public CompletableFuture<Boolean> renamenxAsync(String oldKey, String newKey) {
-        return sendAsync(RedisCommand.RENAMENX, oldKey, keysArgs(oldKey, newKey)).thenApply(v -> v.getBoolValue());
+    public CompletableFuture<Void> setStringAsync(String key, String value) {
+        return (CompletableFuture) send("SET", CacheEntryType.STRING, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
     }
 
-    //--------------------- del ------------------------------    
     @Override
-    public CompletableFuture<Long> delAsync(String... keys) {
-        if (keys.length == 0) {
-            return CompletableFuture.completedFuture(0L);
-        }
-        return sendAsync(RedisCommand.DEL, keys[0], keysArgs(keys)).thenApply(v -> v.getLongValue(0L));
+    public void setString(String key, String value) {
+        setStringAsync(key, value).join();
     }
 
-    //--------------------- incrby ------------------------------    
+    @Override
+    public CompletableFuture<Void> setLongAsync(String key, long value) {
+        return (CompletableFuture) send("SET", CacheEntryType.LONG, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public void setLong(String key, long value) {
+        setLongAsync(key, value).join();
+    }
+
+    //--------------------- set ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Void> setAsync(int expireSeconds, String key, V value) {
+        return (CompletableFuture) setAsync(key, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setAsync(int expireSeconds, String key, Convert convert, T value) {
+        return (CompletableFuture) setAsync(key, convert, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setAsync(int expireSeconds, String key, final Type type, T value) {
+        return (CompletableFuture) setAsync(key, type, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setAsync(int expireSeconds, String key, Convert convert, final Type type, T value) {
+        return (CompletableFuture) setAsync(key, convert, type, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    @Deprecated
+    public void set(int expireSeconds, String key, V value) {
+        setAsync(expireSeconds, key, value).join();
+    }
+
+    @Override
+    public <T> void set(int expireSeconds, String key, Convert convert, T value) {
+        setAsync(expireSeconds, key, convert, value).join();
+    }
+
+    @Override
+    public <T> void set(int expireSeconds, String key, final Type type, T value) {
+        setAsync(expireSeconds, key, type, value).join();
+    }
+
+    @Override
+    public <T> void set(int expireSeconds, String key, Convert convert, final Type type, T value) {
+        setAsync(expireSeconds, key, convert, type, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> setStringAsync(int expireSeconds, String key, String value) {
+        return (CompletableFuture) setStringAsync(key, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public void setString(int expireSeconds, String key, String value) {
+        setStringAsync(expireSeconds, key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> setLongAsync(int expireSeconds, String key, long value) {
+        return (CompletableFuture) setLongAsync(key, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public void setLong(int expireSeconds, String key, long value) {
+        setLongAsync(expireSeconds, key, value).join();
+    }
+
+    //--------------------- setExpireSeconds ------------------------------
+    @Override
+    public CompletableFuture<Void> setExpireSecondsAsync(String key, int expireSeconds) {
+        return (CompletableFuture) send("EXPIRE", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(expireSeconds).getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public void setExpireSeconds(String key, int expireSeconds) {
+        setExpireSecondsAsync(key, expireSeconds).join();
+    }
+
+    //--------------------- remove ------------------------------
+    @Override
+    public CompletableFuture<Integer> removeAsync(String key) {
+        return (CompletableFuture) send("DEL", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public int remove(String key) {
+        return removeAsync(key).join();
+    }
+
+    //--------------------- incr ------------------------------
+    @Override
+    public long incr(final String key) {
+        return incrAsync(key).join();
+    }
+
     @Override
     public CompletableFuture<Long> incrAsync(final String key) {
-        return sendAsync(RedisCommand.INCR, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
+        return (CompletableFuture) send("INCR", CacheEntryType.ATOMIC, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Long> incrbyAsync(final String key, long num) {
-        return sendAsync(RedisCommand.INCRBY, key, keyArgs(key, num)).thenApply(v -> v.getLongValue(0L));
+    public long incr(final String key, long num) {
+        return incrAsync(key, num).join();
     }
 
     @Override
-    public CompletableFuture<Double> incrbyFloatAsync(final String key, double num) {
-        return sendAsync(RedisCommand.INCRBYFLOAT, key, keyArgs(key, num)).thenApply(v -> v.getDoubleValue(0.d));
+    public CompletableFuture<Long> incrAsync(final String key, long num) {
+        return (CompletableFuture) send("INCRBY", CacheEntryType.ATOMIC, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(num).getBytes(StandardCharsets.UTF_8));
     }
 
-    //--------------------- decrby ------------------------------    
+    //--------------------- decr ------------------------------
+    @Override
+    public long decr(final String key) {
+        return decrAsync(key).join();
+    }
+
     @Override
     public CompletableFuture<Long> decrAsync(final String key) {
-        return sendAsync(RedisCommand.DECR, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
+        return (CompletableFuture) send("DECR", CacheEntryType.ATOMIC, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Long> decrbyAsync(final String key, long num) {
-        return sendAsync(RedisCommand.DECRBY, key, keyArgs(key, num)).thenApply(v -> v.getLongValue(0L));
+    public long decr(final String key, long num) {
+        return decrAsync(key, num).join();
     }
 
     @Override
-    public CompletableFuture<Long> hdelAsync(final String key, String... fields) {
-        return sendAsync(RedisCommand.HDEL, key, keysArgs(key, fields)).thenApply(v -> v.getLongValue(0L));
+    public CompletableFuture<Long> decrAsync(final String key, long num) {
+        return (CompletableFuture) send("DECRBY", CacheEntryType.ATOMIC, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(num).getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Long> hlenAsync(final String key) {
-        return sendAsync(RedisCommand.HLEN, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
+    public int hremove(final String key, String... fields) {
+        return hremoveAsync(key, fields).join();
+    }
+
+    @Override
+    public int hsize(final String key) {
+        return hsizeAsync(key).join();
+    }
+
+    @Override
+    public List<String> hkeys(final String key) {
+        return hkeysAsync(key).join();
+    }
+
+    @Override
+    public long hincr(final String key, String field) {
+        return hincrAsync(key, field).join();
+    }
+
+    @Override
+    public long hincr(final String key, String field, long num) {
+        return hincrAsync(key, field, num).join();
+    }
+
+    @Override
+    public long hdecr(final String key, String field) {
+        return hdecrAsync(key, field).join();
+    }
+
+    @Override
+    public long hdecr(final String key, String field, long num) {
+        return hdecrAsync(key, field, num).join();
+    }
+
+    @Override
+    public boolean hexists(final String key, String field) {
+        return hexistsAsync(key, field).join();
+    }
+
+    @Override
+    public <T> void hset(final String key, final String field, final Convert convert, final T value) {
+        hsetAsync(key, field, convert, value).join();
+    }
+
+    @Override
+    public <T> void hset(final String key, final String field, final Type type, final T value) {
+        hsetAsync(key, field, type, value).join();
+    }
+
+    @Override
+    public <T> void hset(final String key, final String field, final Convert convert, final Type type, final T value) {
+        hsetAsync(key, field, convert, type, value).join();
+    }
+
+    @Override
+    public void hsetString(final String key, final String field, final String value) {
+        hsetStringAsync(key, field, value).join();
+    }
+
+    @Override
+    public void hsetLong(final String key, final String field, final long value) {
+        hsetLongAsync(key, field, value).join();
+    }
+
+    @Override
+    public void hmset(final String key, final Serializable... values) {
+        hmsetAsync(key, values).join();
+    }
+
+    @Override
+    public List<Serializable> hmget(final String key, final Type type, final String... fields) {
+        return hmgetAsync(key, type, fields).join();
+    }
+
+    @Override
+    public <T> Map<String, T> hmap(final String key, final Type type, int offset, int limit, String pattern) {
+        return (Map) hmapAsync(key, type, offset, limit, pattern).join();
+    }
+
+    @Override
+    public <T> Map<String, T> hmap(final String key, final Type type, int offset, int limit) {
+        return (Map) hmapAsync(key, type, offset, limit).join();
+    }
+
+    @Override
+    public <T> T hget(final String key, final String field, final Type type) {
+        return (T) hgetAsync(key, field, type).join();
+    }
+
+    @Override
+    public String hgetString(final String key, final String field) {
+        return hgetStringAsync(key, field).join();
+    }
+
+    @Override
+    public long hgetLong(final String key, final String field, long defValue) {
+        return hgetLongAsync(key, field, defValue).join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> hremoveAsync(final String key, String... fields) {
+        byte[][] bs = new byte[fields.length + 1][];
+        bs[0] = key.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < fields.length; i++) {
+            bs[i + 1] = fields[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return (CompletableFuture) send("HDEL", CacheEntryType.MAP, (Type) null, key, bs);
+    }
+
+    @Override
+    public CompletableFuture<Integer> hsizeAsync(final String key) {
+        return (CompletableFuture) send("HLEN", CacheEntryType.LONG, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public CompletableFuture<List<String>> hkeysAsync(final String key) {
-        return sendAsync(RedisCommand.HKEYS, key, keyArgs(key)).thenApply(v -> (List) v.getListValue(key, cryptor, String.class));
+        return (CompletableFuture) send("HKEYS", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public CompletableFuture<Long> hincrAsync(final String key, String field) {
-        return hincrbyAsync(key, field, 1);
+        return hincrAsync(key, field, 1);
     }
 
     @Override
-    public CompletableFuture<Long> hincrbyAsync(final String key, String field, long num) {
-        return sendAsync(RedisCommand.HINCRBY, key, keysArgs(key, field, String.valueOf(num))).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public CompletableFuture<Double> hincrbyFloatAsync(final String key, String field, double num) {
-        return sendAsync(RedisCommand.HINCRBYFLOAT, key, keysArgs(key, field, String.valueOf(num))).thenApply(v -> v.getDoubleValue(0.d));
+    public CompletableFuture<Long> hincrAsync(final String key, String field, long num) {
+        return (CompletableFuture) send("HINCRBY", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), String.valueOf(num).getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public CompletableFuture<Long> hdecrAsync(final String key, String field) {
-        return hincrbyAsync(key, field, -1);
+        return hincrAsync(key, field, -1);
     }
 
     @Override
-    public CompletableFuture<Long> hdecrbyAsync(final String key, String field, long num) {
-        return hincrbyAsync(key, field, -num);
+    public CompletableFuture<Long> hdecrAsync(final String key, String field, long num) {
+        return hincrAsync(key, field, -num);
     }
 
     @Override
     public CompletableFuture<Boolean> hexistsAsync(final String key, String field) {
-        return sendAsync(RedisCommand.HEXISTS, key, keysArgs(key, field)).thenApply(v -> v.getIntValue(0) > 0);
+        return (CompletableFuture) send("HEXISTS", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> hsetAsync(final String key, final String field, final Convert convert, final T value) {
+        return (CompletableFuture) send("HSET", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.MAP, convert, null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> hsetAsync(final String key, final String field, final Type type, final T value) {
+        return (CompletableFuture) send("HSET", CacheEntryType.MAP, type, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.MAP, null, type, value));
     }
 
     @Override
     public <T> CompletableFuture<Void> hsetAsync(final String key, final String field, final Convert convert, final Type type, final T value) {
-        if (value == null) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return sendAsync(RedisCommand.HSET, key, keyArgs(key, field, convert, type, value)).thenApply(v -> v.getVoidValue());
+        return (CompletableFuture) send("HSET", CacheEntryType.MAP, type, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.MAP, convert, type, value));
     }
 
     @Override
-    public <T> CompletableFuture<Boolean> hsetnxAsync(final String key, final String field, final Convert convert, final Type type, final T value) {
-        if (value == null) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return sendAsync(RedisCommand.HSETNX, key, keyArgs(key, field, convert, type, value)).thenApply(v -> v.getBoolValue());
+    public CompletableFuture<Void> hsetStringAsync(final String key, final String field, final String value) {
+        return (CompletableFuture) send("HSET", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, null, null, value));
+    }
+
+    @Override
+    public CompletableFuture<Void> hsetLongAsync(final String key, final String field, final long value) {
+        return (CompletableFuture) send("HSET", CacheEntryType.MAP, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, null, null, value));
     }
 
     @Override
     public CompletableFuture<Void> hmsetAsync(final String key, final Serializable... values) {
-        return sendAsync(RedisCommand.HMSET, key, keyMapArgs(key, values)).thenApply(v -> v.getVoidValue());
-    }
-
-    @Override
-    public CompletableFuture<Void> hmsetAsync(final String key, final Map map) {
-        if (isEmpty(map)) {
-            return CompletableFuture.completedFuture(null);
+        byte[][] bs = new byte[values.length + 1][];
+        bs[0] = key.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < values.length; i += 2) {
+            bs[i + 1] = String.valueOf(values[i]).getBytes(StandardCharsets.UTF_8);
+            bs[i + 2] = formatValue(CacheEntryType.MAP, null, null, values[i + 1]);
         }
-        return sendAsync(RedisCommand.HMSET, key, keyMapArgs(key, map)).thenApply(v -> v.getVoidValue());
+        return (CompletableFuture) send("HMSET", CacheEntryType.MAP, (Type) null, key, bs);
     }
 
     @Override
     public CompletableFuture<List<Serializable>> hmgetAsync(final String key, final Type type, final String... fields) {
-        return sendAsync(RedisCommand.HMGET, key, keysArgs(key, fields)).thenApply(v -> (List) v.getListValue(key, cryptor, type));
+        byte[][] bs = new byte[fields.length + 1][];
+        bs[0] = key.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < fields.length; i++) {
+            bs[i + 1] = fields[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return (CompletableFuture) send("HMGET", CacheEntryType.MAP, type, key, bs);
     }
 
     @Override
-    public <T> CompletableFuture<Map<String, T>> hscanAsync(final String key, final Type type, AtomicLong cursor, int limit, String pattern) {
-        return sendAsync(RedisCommand.HSCAN, key, keyArgs(key, cursor, limit, pattern)).thenApply(v -> {
-            Map map = v.getMapValue(key, cryptor, type);
-            cursor.set(v.getCursor());
-            return map;
-        });
+    public <T> CompletableFuture<Map<String, T>> hmapAsync(final String key, final Type type, int offset, int limit) {
+        return hmapAsync(key, type, offset, limit, null);
     }
 
     @Override
-    public <T> CompletableFuture<Map<String, T>> hgetallAsync(final String key, final Type type) {
-        return sendAsync(RedisCommand.HGETALL, key, keyArgs(key)).thenApply(v -> v.getMapValue(key, cryptor, type));
-    }
-
-    @Override
-    public <T> CompletableFuture<List<T>> hvalsAsync(final String key, final Type type) {
-        return sendAsync(RedisCommand.HVALS, key, keyArgs(key)).thenApply(v -> v.getListValue(key, cryptor, type));
+    public <T> CompletableFuture<Map<String, T>> hmapAsync(final String key, final Type type, int offset, int limit, String pattern) {
+        byte[][] bs = new byte[pattern == null || pattern.isEmpty() ? 4 : 6][limit];
+        int index = -1;
+        bs[++index] = key.getBytes(StandardCharsets.UTF_8);
+        bs[++index] = String.valueOf(offset).getBytes(StandardCharsets.UTF_8);
+        if (pattern != null && !pattern.isEmpty()) {
+            bs[++index] = "MATCH".getBytes(StandardCharsets.UTF_8);
+            bs[++index] = pattern.getBytes(StandardCharsets.UTF_8);
+        }
+        bs[++index] = "COUNT".getBytes(StandardCharsets.UTF_8);
+        bs[++index] = String.valueOf(limit).getBytes(StandardCharsets.UTF_8);
+        return (CompletableFuture) send("HSCAN", CacheEntryType.MAP, type, key, bs);
     }
 
     @Override
     public <T> CompletableFuture<T> hgetAsync(final String key, final String field, final Type type) {
-        return sendAsync(RedisCommand.HGET, key, keysArgs(key, field)).thenApply(v -> v.getObjectValue(key, cryptor, type));
+        return (CompletableFuture) send("HGET", CacheEntryType.OBJECT, type, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public CompletableFuture<Long> hstrlenAsync(String key, final String field) {
-        return sendAsync(RedisCommand.HSTRLEN, key, keysArgs(key, field)).thenApply(v -> v.getLongValue(0L));
+    public CompletableFuture<String> hgetStringAsync(final String key, final String field) {
+        return (CompletableFuture) send("HGET", CacheEntryType.STRING, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public <T> CompletableFuture<Set<T>> smembersAsync(String key, final Type componentType) {
-        return sendAsync(RedisCommand.SMEMBERS, key, keyArgs(key)).thenApply(v -> v.getSetValue(key, cryptor, componentType));
+    public CompletableFuture<Long> hgetLongAsync(final String key, final String field, long defValue) {
+        return (CompletableFuture) send("HGET", CacheEntryType.LONG, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8)).thenApplyAsync(v -> v == null ? defValue : v);
     }
 
+    //--------------------- collection ------------------------------
     @Override
-    public <T> CompletableFuture<List<T>> lrangeAsync(String key, final Type componentType, int start, int stop) {
-        return sendAsync(RedisCommand.LRANGE, key, keyArgs(key, start, stop)).thenApply(v -> v.getListValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<T> lindexAsync(String key, Type componentType, int index) {
-        return sendAsync(RedisCommand.LINDEX, key, keyArgs(key, index)).thenApply(v -> v.getObjectValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Long> linsertBeforeAsync(String key, Type componentType, T pivot, T value) {
-        return sendAsync(RedisCommand.LINSERT, key, keyArgs(key, "BEFORE", componentType, pivot, value)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T> CompletableFuture<Long> linsertAfterAsync(String key, Type componentType, T pivot, T value) {
-        return sendAsync(RedisCommand.LINSERT, key, keyArgs(key, "AFTER", componentType, pivot, value)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public CompletableFuture<Void> ltrimAsync(final String key, int start, int stop) {
-        return sendAsync(RedisCommand.LTRIM, key, keyArgs(key, start, stop)).thenApply(v -> null);
-    }
-
-    @Override
-    public <T> CompletableFuture<T> lpopAsync(final String key, final Type componentType) {
-        return sendAsync(RedisCommand.LPOP, key, keyArgs(key)).thenApply(v -> v.getObjectValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Void> lpushAsync(final String key, final Type componentType, T... values) {
-        return sendAsync(RedisCommand.LPUSH, key, keyArgs(key, componentType, values)).thenApply(v -> null);
-    }
-
-    @Override
-    public <T> CompletableFuture<Void> lpushxAsync(final String key, final Type componentType, T... values) {
-        return sendAsync(RedisCommand.LPUSHX, key, keyArgs(key, componentType, values)).thenApply(v -> null);
-    }
-
-    @Override
-    public <T> CompletableFuture<T> rpopAsync(final String key, final Type componentType) {
-        return sendAsync(RedisCommand.RPOP, key, keyArgs(key)).thenApply(v -> v.getObjectValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<T> rpoplpushAsync(final String key, final String key2, final Type componentType) {
-        return sendAsync(RedisCommand.RPOPLPUSH, key, keysArgs(key, key2)).thenApply(v -> v.getObjectValue(key, cryptor, componentType));
-    }
-
-    //--------------------- collection ------------------------------  
-    @Override
-    public CompletableFuture<Long> llenAsync(String key) {
-        return sendAsync(RedisCommand.LLEN, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public CompletableFuture<Long> scardAsync(String key) {
-        return sendAsync(RedisCommand.SCARD, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T> CompletableFuture<List<Boolean>> smismembersAsync(final String key, final String... members) {
-        return sendAsync(RedisCommand.SMISMEMBER, key, keysArgs(key, members)).thenApply(v -> v.getListValue(key, cryptor, Boolean.class));
-    }
-
-    @Override
-    public <T> CompletableFuture<Boolean> smoveAsync(String key, String key2, Type componentType, T member) {
-        return sendAsync(RedisCommand.SMOVE, key, keyArgs(key, key2, componentType, member)).thenApply(v -> v.getBoolValue());
-    }
-
-    @Override
-    public <T> CompletableFuture<List<T>> srandmemberAsync(String key, Type componentType, int count) {
-        return sendAsync(RedisCommand.SRANDMEMBER, key, keyArgs(key, count)).thenApply(v -> v.getListValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Set<T>> sdiffAsync(final String key, final Type componentType, final String... key2s) {
-        return sendAsync(RedisCommand.SDIFF, key, keysArgs(key, key2s)).thenApply(v -> v.getSetValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public CompletableFuture<Long> sdiffstoreAsync(final String key, final String srcKey, final String... srcKey2s) {
-        return sendAsync(RedisCommand.SDIFFSTORE, key, keysArgs(Utility.append(key, srcKey, srcKey2s))).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T> CompletableFuture<Set<T>> sinterAsync(final String key, final Type componentType, final String... key2s) {
-        return sendAsync(RedisCommand.SINTER, key, keysArgs(key, key2s)).thenApply(v -> v.getSetValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public CompletableFuture<Long> sinterstoreAsync(final String key, final String srcKey, final String... srcKey2s) {
-        return sendAsync(RedisCommand.SINTERSTORE, key, keysArgs(Utility.append(key, srcKey, srcKey2s))).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T> CompletableFuture<Set<T>> sunionAsync(final String key, final Type componentType, final String... key2s) {
-        return sendAsync(RedisCommand.SUNION, key, keysArgs(key, key2s)).thenApply(v -> v.getSetValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public CompletableFuture<Long> sunionstoreAsync(final String key, final String srcKey, final String... srcKey2s) {
-        return sendAsync(RedisCommand.SUNIONSTORE, key, keysArgs(Utility.append(key, srcKey, srcKey2s))).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T> CompletableFuture<List<T>> mgetAsync(final Type componentType, final String... keys) {
-        return sendAsync(RedisCommand.MGET, keys[0], keysArgs(keys)).thenApply(v -> (List) v.getListValue(keys[0], cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Map<String, Set<T>>> smembersAsync(final Type componentType, final String... keys) {
-        final RedisCacheRequest[] requests = new RedisCacheRequest[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            String key = keys[i];
-            requests[i] = RedisCacheRequest.create(RedisCommand.SMEMBERS, key, keyArgs(key));
-        }
-        return sendAsync(requests).thenApply(list -> {
-            final Map<String, Set<T>> map = new LinkedHashMap<>();
-            for (int i = 0; i < keys.length; i++) {
-                String key = keys[i];
-                Set c = list.get(i).getSetValue(key, cryptor, componentType);
-                if (c != null) {
-                    map.put(key, c);
-                }
-            }
-            return map;
-        });
-    }
-
-    @Override
-    public <T> CompletableFuture<Map<String, List<T>>> lrangesAsync(final Type componentType, final String... keys) {
-        final RedisCacheRequest[] requests = new RedisCacheRequest[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            String key = keys[i];
-            requests[i] = RedisCacheRequest.create(RedisCommand.LRANGE, key, keyArgs(key, 0, -1));
-        }
-        return sendAsync(requests).thenApply(list -> {
-            final Map<String, List<T>> map = new LinkedHashMap<>();
-            for (int i = 0; i < keys.length; i++) {
-                String key = keys[i];
-                List c = list.get(i).getListValue(key, cryptor, componentType);
-                if (c != null) {
-                    map.put(key, c);
-                }
-            }
-            return map;
-        });
-    }
-
-    @Override
-    public <T> CompletableFuture<Boolean> sismemberAsync(String key, final Type componentType, T value) {
-        return sendAsync(RedisCommand.SISMEMBER, key, keyArgs(key, componentType, value)).thenApply(v -> v.getIntValue(0) > 0);
-    }
-
-    //--------------------- rpush ------------------------------  
-    @Override
-    public <T> CompletableFuture<Void> rpushAsync(String key, final Type componentType, T... values) {
-        return sendAsync(RedisCommand.RPUSH, key, keyArgs(key, componentType, values)).thenApply(v -> v.getVoidValue());
-    }
-
-    @Override
-    public <T> CompletableFuture<Void> rpushxAsync(String key, final Type componentType, T... values) {
-        return sendAsync(RedisCommand.RPUSHX, key, keyArgs(key, componentType, values)).thenApply(v -> v.getVoidValue());
-    }
-
-    //--------------------- lrem ------------------------------  
-    @Override
-    public <T> CompletableFuture<Long> lremAsync(String key, final Type componentType, T value) {
-        return sendAsync(RedisCommand.LREM, key, keyArgs(key, 0, componentType, value)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    //--------------------- sadd ------------------------------  
-    @Override
-    public <T> CompletableFuture<Void> saddAsync(String key, Type componentType, T... values) {
-        return sendAsync(RedisCommand.SADD, key, keyArgs(key, componentType, values)).thenApply(v -> v.getVoidValue());
-    }
-
-    @Override
-    public <T> CompletableFuture<T> spopAsync(String key, Type componentType) {
-        return sendAsync(RedisCommand.SPOP, key, keyArgs(key)).thenApply(v -> v.getObjectValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Set<T>> spopAsync(String key, int count, Type componentType) {
-        return sendAsync(RedisCommand.SPOP, key, keyArgs(key, count)).thenApply(v -> v.getSetValue(key, cryptor, componentType));
-    }
-
-    @Override
-    public <T> CompletableFuture<Set< T>> sscanAsync(final String key, final Type componentType, AtomicLong cursor, int limit, String pattern) {
-        return sendAsync(RedisCommand.SSCAN, key, keyArgs(key, cursor, limit, pattern)).thenApply(v -> {
-            Set set = v.getSetValue(key, cryptor, componentType);
-            cursor.set(v.getCursor());
-            return set;
-        });
-    }
-
-    @Override
-    public <T> CompletableFuture<Long> sremAsync(String key, final Type componentType, T... values) {
-        return sendAsync(RedisCommand.SREM, key, keyArgs(key, componentType, values)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    //--------------------- sorted set ------------------------------ 
-    @Override
-    public CompletableFuture<Void> zaddAsync(String key, CacheScoredValue... values) {
-        return sendAsync(RedisCommand.ZADD, key, keyArgs(key, values)).thenApply(v -> v.getVoidValue());
-    }
-
-    @Override
-    public <T extends Number> CompletableFuture<T> zincrbyAsync(String key, CacheScoredValue value) {
-        return sendAsync(RedisCommand.ZINCRBY, key, keyArgs(key, value)).thenApply(v -> v.getObjectValue(key, (RedisCryptor) null, value.getScore().getClass()));
-    }
-
-    @Override
-    public CompletableFuture<Long> zremAsync(String key, String... members) {
-        return sendAsync(RedisCommand.ZREM, key, keysArgs(key, members)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public <T extends Number> CompletableFuture<List<T>> zmscoreAsync(String key, Class<T> scoreType, String... members) {
-        return sendAsync(RedisCommand.ZMSCORE, key, keysArgs(key, members)).thenApply(v -> v.getListValue(key, (RedisCryptor) null, scoreType));
-    }
-
-    @Override
-    public <T extends Number> CompletableFuture<T> zscoreAsync(String key, Class<T> scoreType, String member) {
-        return sendAsync(RedisCommand.ZSCORE, key, keysArgs(key, member)).thenApply(v -> v.getObjectValue(key, (RedisCryptor) null, scoreType));
-    }
-
-    @Override
-    public CompletableFuture<Long> zcardAsync(String key) {
-        return sendAsync(RedisCommand.ZCARD, key, keyArgs(key)).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public CompletableFuture<Long> zrankAsync(String key, String member) {
-        return sendAsync(RedisCommand.ZRANK, key, keysArgs(key, member)).thenApply(v -> v.getLongValue(null));
-    }
-
-    @Override
-    public CompletableFuture<Long> zrevrankAsync(String key, String member) {
-        return sendAsync(RedisCommand.ZREVRANK, key, keysArgs(key, member)).thenApply(v -> v.getLongValue(null));
-    }
-
-    @Override
-    public CompletableFuture<List<String>> zrangeAsync(String key, int start, int stop) {
-        return sendAsync(RedisCommand.ZRANGE, key, keyArgs(key, start, stop)).thenApply(v -> v.getListValue(key, (RedisCryptor) null, String.class));
-    }
-
-    @Override
-    public CompletableFuture<List<CacheScoredValue>> zscanAsync(String key, Type scoreType, AtomicLong cursor, int limit, String pattern) {
-        return sendAsync(RedisCommand.ZSCAN, null, keyArgs(key, cursor, limit, pattern)).thenApply(v -> {
-            List<CacheScoredValue> set = v.getScoreListValue(null, (RedisCryptor) null, scoreType);
-            cursor.set(v.getCursor());
-            return set;
-        });
-    }
-
-    //--------------------- keys ------------------------------  
-    @Override
-    public CompletableFuture<List<String>> keysAsync(String pattern) {
-        String key = isEmpty(pattern) ? "*" : pattern;
-        return sendAsync(RedisCommand.KEYS, key, keyArgs(key)).thenApply(v -> (List) v.getListValue(key, (RedisCryptor) null, String.class));
-    }
-
-    @Override
-    public CompletableFuture<List<String>> scanAsync(AtomicLong cursor, int limit, String pattern) {
-        return sendAsync(RedisCommand.SCAN, null, keyArgs(null, cursor, limit, pattern)).thenApply(v -> {
-            List<String> list = v.getListValue(null, (RedisCryptor) null, String.class);
-            cursor.set(v.getCursor());
-            return list;
-        });
-    }
-
-    //--------------------- dbsize ------------------------------  
-    @Override
-    public CompletableFuture<Long> dbsizeAsync() {
-        return sendAsync(RedisCommand.DBSIZE, null).thenApply(v -> v.getLongValue(0L));
-    }
-
-    @Override
-    public CompletableFuture<Void> flushdbAsync() {
-        return sendAsync(RedisCommand.FLUSHDB, null).thenApply(v -> null);
-    }
-
-    @Override
-    public CompletableFuture<Void> flushallAsync() {
-        return sendAsync(RedisCommand.FLUSHALL, null).thenApply(v -> null);
-    }
-
-    //--------------------- send ------------------------------  
-    @Local
-    public CompletableFuture<RedisCacheResult> sendAsync(final RedisCommand command, final String key, final byte[]... args) {
-        WorkThread workThread = WorkThread.currentWorkThread();
-        String traceid = Traces.currentTraceid();
-        if (false && logger.isLoggable(Level.FINEST)) {
-            logger.log(Level.FINEST, "redis.send(traceid=" + traceid + ") " + command + " " + key);
-            CompletableFuture<RedisCacheResult> future = client.connect()
-                .thenCompose(conn -> {
-                    if (isNotEmpty(traceid)) {
-                        Traces.computeIfAbsent(traceid);
-                    }
-                    RedisCacheRequest req = conn.pollRequest(workThread, traceid).prepare(command, key, args);
-                    req.traceid(traceid);
-                    logger.log(Level.FINEST, "redis.send(traceid=" + traceid + ") request: " + req);
-                    return conn.writeRequest(req).thenApply(v -> {
-                        logger.log(Level.FINEST, "redis.callback(traceid=" + traceid + ") response: " + v);
-                        return v;
-                    });
-                });
-            return Utility.orTimeout(future, 6, TimeUnit.SECONDS);
-        } else {
-            return Utility.orTimeout(client.connect()
-                .thenCompose(conn -> {
-                    if (isNotEmpty(traceid)) {
-                        Traces.computeIfAbsent(traceid);
-                    }
-                    RedisCacheRequest req = conn.pollRequest(workThread, traceid).prepare(command, key, args);
-                    req.traceid(traceid);
-                    return conn.writeRequest(req);
-                }),
-                6, TimeUnit.SECONDS);
-        }
-    }
-
-    @Local
-    public CompletableFuture<List<RedisCacheResult>> sendAsync(final RedisCacheRequest... requests) {
-        WorkThread workThread = WorkThread.currentWorkThread();
-        String traceid = Traces.currentTraceid();
-        for (RedisCacheRequest request : requests) {
-            request.workThread(workThread).traceid(traceid);
-        }
-        return Utility.orTimeout(client.connect()
-            .thenCompose(conn -> {
-                if (isNotEmpty(traceid)) {
-                    Traces.computeIfAbsent(traceid);
-                }
-                return conn.writeRequest(requests);
-            }),
-            6, TimeUnit.SECONDS);
-    }
-
-    private byte[][] keyArgs(String key) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(final String key, AtomicLong cursor, int limit, String pattern) {
-        int c = isNotEmpty(key) ? 2 : 1;
-        if (isNotEmpty(pattern)) {
-            c += 2;
-        }
-        if (limit > 0) {
-            c += 2;
-        }
-        byte[][] bss = new byte[c][];
-        int index = -1;
-        if (isNotEmpty(key)) {
-            bss[++index] = key.getBytes(StandardCharsets.UTF_8);
-        }
-        bss[++index] = cursor.toString().getBytes(StandardCharsets.UTF_8);
-        if (isNotEmpty(pattern)) {
-            bss[++index] = BYTES_MATCH;
-            bss[++index] = pattern.getBytes(StandardCharsets.UTF_8);
-        }
-        if (limit > 0) {
-            bss[++index] = BYTES_COUNT;
-            bss[++index] = String.valueOf(limit).getBytes(StandardCharsets.UTF_8);
-        }
-        return bss;
-    }
-
-    private byte[][] keyArgs(String key, Number numValue) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), numValue.toString().getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(String key, int numValue) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), String.valueOf(numValue).getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(String key, long numValue) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), String.valueOf(numValue).getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(String key, String ex, int numValue) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            ex.getBytes(StandardCharsets.UTF_8),
-            String.valueOf(numValue).getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(String key, int start, int stop) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            String.valueOf(start).getBytes(StandardCharsets.UTF_8),
-            String.valueOf(stop).getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyArgs(String key, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), encodeValue(key, cryptor, null, type, value)};
-    }
-
-    private byte[][] keyArgs(String key, Convert convert, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), encodeValue(key, cryptor, convert, type, value)};
-    }
-
-    private byte[][] keyArgs(String key, String field, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), encodeValue(key, cryptor, null, type, value)};
-    }
-
-    private byte[][] keyArgs(String key, String field, Convert convert, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8), encodeValue(key, cryptor, convert, type, value)};
-    }
-
-    private byte[][] keyArgs(String key, int expire, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            String.valueOf(expire).getBytes(StandardCharsets.UTF_8),
-            encodeValue(key, cryptor, null, type, value)};
-    }
-
-    private byte[][] keyArgs(String key, int expire, Convert convert, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            String.valueOf(expire).getBytes(StandardCharsets.UTF_8),
-            encodeValue(key, cryptor, convert, type, value)};
-    }
-
-    private <T> byte[][] keyArgs(String key, final Type componentType, T... values) {
-        byte[][] bss = new byte[values.length + 1][];
-        bss[0] = key.getBytes(StandardCharsets.UTF_8);
-        for (int i = 0; i < values.length; i++) {
-            bss[i + 1] = encodeValue(key, cryptor, null, componentType, values[i]);
-        }
-        return bss;
-    }
-
-    private <T> byte[][] keyArgs(String key, String arg, final Type componentType, T... values) {
-        byte[][] bss = new byte[values.length + 2][];
-        bss[0] = key.getBytes(StandardCharsets.UTF_8);
-        bss[1] = arg.getBytes(StandardCharsets.UTF_8);
-        for (int i = 0; i < values.length; i++) {
-            bss[i + 2] = encodeValue(key, cryptor, null, componentType, values[i]);
-        }
-        return bss;
-    }
-
-    private <T> byte[][] keyArgs(String key, CacheScoredValue... values) {
-        byte[][] bss = new byte[values.length * 2 + 1][];
-        bss[0] = key.getBytes(StandardCharsets.UTF_8);
-        for (int i = 0; i < values.length * 2; i += 2) {
-            bss[i + 1] = values[i].getScore().toString().getBytes(StandardCharsets.UTF_8);
-            bss[i + 2] = values[i].getValue().getBytes(StandardCharsets.UTF_8);
-        }
-        return bss;
-    }
-
-    private byte[][] keyArgs(String key, int expire, byte[] nx, byte[] ex, Convert convert, Type type, Object value) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            encodeValue(key, cryptor, convert, type, value), nx, ex,
-            String.valueOf(expire).getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keyMapArgs(String key, Serializable... keyVals) {
-        byte[][] bss = new byte[keyVals.length + (key == null ? 0 : 1)][];
-        int start = -1;
-        if (key != null) {
-            start++;
-            bss[0] = key.getBytes(StandardCharsets.UTF_8);
-        }
-        for (int i = 0; i < keyVals.length; i += 2) {
-            String k = keyVals[i].toString();
-            bss[i + start + 1] = k.getBytes(StandardCharsets.UTF_8);
-            bss[i + start + 2] = encodeValue(k, cryptor, keyVals[i + 1]);
-        }
-        return bss;
-    }
-
-    private byte[][] keyMapArgs(String key, Map map) {
-        byte[][] bss = new byte[map.size() * 2 + (key == null ? 0 : 1)][];
-        int start = 0;
-        if (key != null) {
-            start++;
-            bss[0] = key.getBytes(StandardCharsets.UTF_8);
-        }
-        AtomicInteger index = new AtomicInteger(start);
-        map.forEach((k, v) -> {
-            int i = index.getAndAdd(2);
-            bss[i] = k.toString().getBytes(StandardCharsets.UTF_8);
-            bss[i + 1] = encodeValue(k.toString(), cryptor, v);
-        });
-        return bss;
-    }
-
-    private byte[][] keymArgs(Serializable... keyVals) {
-        return keyMapArgs(null, keyVals);
-    }
-
-    private byte[][] keymArgs(Map map) {
-        return keyMapArgs(null, map);
-    }
-
-    private byte[][] keysArgs(String key, String field) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keysArgs(String key, String field, String num) {
-        return new byte[][]{key.getBytes(StandardCharsets.UTF_8),
-            field.getBytes(StandardCharsets.UTF_8),
-            num.getBytes(StandardCharsets.UTF_8)};
-    }
-
-    private byte[][] keysArgs(String... keys) {
-        byte[][] bss = new byte[keys.length][];
-        for (int i = 0; i < keys.length; i++) {
-            bss[i] = keys[i].getBytes(StandardCharsets.UTF_8);
-        }
-        return bss;
-    }
-
-    static byte[][] keysArgs(String key, String... keys) {
-        if (key == null) {
-            byte[][] bss = new byte[keys.length][];
-            for (int i = 0; i < keys.length; i++) {
-                bss[i] = keys[i].getBytes(StandardCharsets.UTF_8);
-            }
-            return bss;
-        } else {
-            byte[][] bss = new byte[keys.length + 1][];
-            bss[0] = key.getBytes(StandardCharsets.UTF_8);
-            for (int i = 0; i < keys.length; i++) {
-                bss[i + 1] = keys[i].getBytes(StandardCharsets.UTF_8);
-            }
-            return bss;
-        }
-    }
-
-    private byte[] encodeValue(String key, RedisCryptor cryptor, String value) {
-        if (cryptor != null) {
-            value = cryptor.encrypt(key, value);
-        }
-        if (value == null) {
-            throw new NullPointerException();
-        }
-        return value.getBytes(StandardCharsets.UTF_8);
-    }
-
-    private byte[] encodeValue(String key, RedisCryptor cryptor, Object value) {
-        return encodeValue(key, cryptor, null, null, value);
-    }
-
-    private byte[] encodeValue(String key, RedisCryptor cryptor, Convert convert0, Type type, Object value) {
-        if (value == null) {
-            throw new NullPointerException();
-        }
-        if (value instanceof Boolean) {
-            return (Boolean) value ? RedisCacheRequest.BYTES_TRUE : RedisCacheRequest.BYTES_FALSE;
-        }
-        if (value instanceof byte[]) {
-            if (cryptor != null) {
-                String val = cryptor.encrypt(key, new String((byte[]) value, StandardCharsets.UTF_8));
-                return val.getBytes(StandardCharsets.UTF_8);
-            }
-            return (byte[]) value;
-        }
-        if (value instanceof CharSequence) {
-            if (cryptor != null) {
-                value = cryptor.encrypt(key, String.valueOf(value));
-            }
-            return value.toString().getBytes(StandardCharsets.UTF_8);
-        }
-        if (value.getClass().isPrimitive() || Number.class.isAssignableFrom(value.getClass())) {
-            return value.toString().getBytes(StandardCharsets.US_ASCII);
-        }
-        if (convert0 == null) {
-            if (convert == null) { //compile模式下convert可能为null
-                convert = JsonConvert.root();
-            }
-            convert0 = convert;
-        }
-        Type t = type == null ? value.getClass() : type;
-        byte[] bs = convert0.convertToBytes(t, value);
-        if (bs.length > 1 && t instanceof Class && !CharSequence.class.isAssignableFrom((Class) t)) {
-            if (bs[0] == '"' && bs[bs.length - 1] == '"') {
-                bs = Arrays.copyOfRange(bs, 1, bs.length - 1);
-            }
-        }
-        if (cryptor != null) {
-            String val = cryptor.encrypt(key, new String(bs, StandardCharsets.UTF_8));
-            return val.getBytes(StandardCharsets.UTF_8);
-        }
-        return bs;
-    }
-
-    //-------------------------- 过期方法 ----------------------------------
-    @Override
-    @Deprecated(since = "2.8.0")
-    public <T> CompletableFuture<Map<String, Collection<T>>> getCollectionMapAsync(final boolean set, final Type componentType, final String... keys) {
-        final CompletableFuture<Map<String, Collection<T>>> rsFuture = new CompletableFuture<>();
-        final Map<String, Collection<T>> map = new LinkedHashMap<>();
-        final ReentrantLock mapLock = new ReentrantLock();
-        final CompletableFuture[] futures = new CompletableFuture[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            final String key = keys[i];
-            futures[i] = sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1)).thenAccept(v -> {
-                Collection c = set ? v.getSetValue(key, cryptor, componentType) : v.getListValue(key, cryptor, componentType);
-                if (c != null) {
-                    mapLock.lock();
-                    try {
-                        map.put(key, (Collection) c);
-                    } finally {
-                        mapLock.unlock();
-                    }
-                }
-            });
-        }
-        CompletableFuture.allOf(futures).whenComplete((w, e) -> {
-            if (e != null) {
-                rsFuture.completeExceptionally(e);
-            } else {
-                rsFuture.complete(map);
-            }
-        });
-        return rsFuture;
-    }
-
-    @Override
-    @Deprecated(since = "2.8.0")
     public CompletableFuture<Integer> getCollectionSizeAsync(String key) {
-        return sendAsync(RedisCommand.TYPE, key, keyArgs(key)).thenCompose(t -> {
-            String type = t.getObjectValue(key, cryptor, String.class);
-            if (type == null) {
-                return CompletableFuture.completedFuture(0);
+        return (CompletableFuture) send("TYPE", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(0);
+            String rs = new String((byte[]) t);
+            if (rs.contains("zset")) { // ziplist
+                return send("ZCARD", null, int.class, key, key.getBytes(StandardCharsets.UTF_8));
+            } else if (rs.contains("list")) { //list
+                return send("LLEN", null, int.class, key, key.getBytes(StandardCharsets.UTF_8));
+            } else if (rs.contains("hash")) {
+                return send("HLEN", null, int.class, key, key.getBytes(StandardCharsets.UTF_8));
+            } else {
+                return send("SCARD", null, int.class, key, key.getBytes(StandardCharsets.UTF_8));
             }
-            return sendAsync(type.contains("list") ? RedisCommand.LLEN : RedisCommand.SCARD, key, keyArgs(key)).thenApply(v -> v.getIntValue(0));
         });
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public int getCollectionSize(String key) {
+        return getCollectionSizeAsync(key).join();
+    }
+
+    @Override
+    @Deprecated
+    public CompletableFuture<Collection<V>> getCollectionAsync(String key) {
+        return (CompletableFuture) send("TYPE", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(null);
+            String str = new String((byte[]) t);
+            if (str.contains("list")) { //list
+                return send("LRANGE", CacheEntryType.OBJECT, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'});
+            } else if (str.contains("none")) {
+                return CompletableFuture.completedFuture(new ArrayList<>());
+            } else {
+                return send("SMEMBERS", CacheEntryType.OBJECT, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+    }
+
+    @Override
     public <T> CompletableFuture<Collection<T>> getCollectionAsync(String key, final Type componentType) {
-        return sendAsync(RedisCommand.TYPE, key, keyArgs(key)).thenCompose(t -> {
-            String type = t.getObjectValue(key, cryptor, String.class);
-            if (type == null) {
-                return CompletableFuture.completedFuture(null);
+        return (CompletableFuture) send("TYPE", null, componentType, key, key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(null);
+            if (new String((byte[]) t).contains("list")) { //list
+                return send("LRANGE", CacheEntryType.OBJECT, componentType, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'});
+            } else {
+                return send("SMEMBERS", CacheEntryType.OBJECT, componentType, true, key, key.getBytes(StandardCharsets.UTF_8));
             }
-            boolean set = !type.contains("list");
-            return sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1)).thenApply(v -> set ? v.getSetValue(key, cryptor, componentType) : v.getListValue(key, cryptor, componentType));
         });
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public CompletableFuture<Map<String, Long>> getLongMapAsync(String... keys) {
+        byte[][] bs = new byte[keys.length][];
+        for (int i = 0; i < bs.length; i++) {
+            bs[i] = keys[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return (CompletableFuture) send("MGET", CacheEntryType.LONG, null, false, keys[0], bs).thenApply(r -> {
+            List list = (List) r;
+            Map map = new LinkedHashMap<>();
+            for (int i = 0; i < keys.length; i++) {
+                Object obj = list.get(i);
+                if (obj != null) map.put(keys[i], list.get(i));
+            }
+            return map;
+        });
+    }
+
+    @Override
     public CompletableFuture<Long[]> getLongArrayAsync(String... keys) {
         byte[][] bs = new byte[keys.length][];
         for (int i = 0; i < bs.length; i++) {
             bs[i] = keys[i].getBytes(StandardCharsets.UTF_8);
         }
-        return sendAsync(RedisCommand.MGET, keys[0], bs).thenApply(v -> {
-            List list = (List) v.getListValue(keys[0], cryptor, long.class);
+        return (CompletableFuture) send("MGET", CacheEntryType.LONG, null, false, keys[0], bs).thenApply(r -> {
+            List list = (List) r;
             Long[] rs = new Long[keys.length];
             for (int i = 0; i < keys.length; i++) {
                 Number obj = (Number) list.get(i);
@@ -1213,14 +998,13 @@ public class RedisCacheSource extends AbstractRedisSource {
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
     public CompletableFuture<String[]> getStringArrayAsync(String... keys) {
         byte[][] bs = new byte[keys.length][];
         for (int i = 0; i < bs.length; i++) {
             bs[i] = keys[i].getBytes(StandardCharsets.UTF_8);
         }
-        return sendAsync(RedisCommand.MGET, keys[0], bs).thenApply(v -> {
-            List list = (List) v.getListValue(keys[0], cryptor, String.class);
+        return (CompletableFuture) send("MGET", CacheEntryType.STRING, null, false, keys[0], bs).thenApply(r -> {
+            List list = (List) r;
             String[] rs = new String[keys.length];
             for (int i = 0; i < keys.length; i++) {
                 Object obj = list.get(i);
@@ -1231,50 +1015,157 @@ public class RedisCacheSource extends AbstractRedisSource {
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public CompletableFuture<Map<String, String>> getStringMapAsync(String... keys) {
+        byte[][] bs = new byte[keys.length][];
+        for (int i = 0; i < bs.length; i++) {
+            bs[i] = keys[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return (CompletableFuture) send("MGET", CacheEntryType.STRING, null, false, keys[0], bs).thenApply(r -> {
+            List list = (List) r;
+            Map map = new LinkedHashMap<>();
+            for (int i = 0; i < keys.length; i++) {
+                Object obj = list.get(i);
+                if (obj != null) map.put(keys[i], list.get(i));
+            }
+            return map;
+        });
+    }
+
+    @Override
+    public <T> CompletableFuture<Map<String, T>> getMapAsync(final Type componentType, String... keys) {
+        byte[][] bs = new byte[keys.length][];
+        for (int i = 0; i < bs.length; i++) {
+            bs[i] = keys[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return (CompletableFuture) send("MGET", CacheEntryType.OBJECT, componentType, false, keys[0], bs).thenApply(r -> {
+            List list = (List) r;
+            Map map = new LinkedHashMap<>();
+            for (int i = 0; i < keys.length; i++) {
+                Object obj = list.get(i);
+                if (obj != null) map.put(keys[i], list.get(i));
+            }
+            return map;
+        });
+    }
+
+    @Override
+    public <T> CompletableFuture<Map<String, Collection<T>>> getCollectionMapAsync(final boolean set, final Type componentType, final String... keys) {
+        final CompletableFuture<Map<String, Collection<T>>> rsFuture = new CompletableFuture<>();
+        final Map<String, Collection<T>> map = new HashMap<>();
+        final CompletableFuture[] futures = new CompletableFuture[keys.length];
+        if (!set) { //list
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("LRANGE", CacheEntryType.OBJECT, componentType, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'}).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
+                    }
+                });
+            }
+        } else {
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("SMEMBERS", CacheEntryType.OBJECT, componentType, true, key, key.getBytes(StandardCharsets.UTF_8)).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
+                    }
+                });
+            }
+        }
+        CompletableFuture.allOf(futures).whenComplete((w, e) -> {
+            if (e != null) {
+                rsFuture.completeExceptionally(e);
+            } else {
+                rsFuture.complete(map);
+            }
+        });
+        return rsFuture;
+    }
+
+    @Override
+    @Deprecated
+    public Collection<V> getCollection(String key) {
+        return getCollectionAsync(key).join();
+    }
+
+    @Override
+    public <T> Collection<T> getCollection(String key, final Type componentType) {
+        return (Collection) getCollectionAsync(key, componentType).join();
+    }
+
+    @Override
+    public Map<String, Long> getLongMap(final String... keys) {
+        return getLongMapAsync(keys).join();
+    }
+
+    @Override
     public Long[] getLongArray(final String... keys) {
         return getLongArrayAsync(keys).join();
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public Map<String, String> getStringMap(final String... keys) {
+        return getStringMapAsync(keys).join();
+    }
+
+    @Override
     public String[] getStringArray(final String... keys) {
         return getStringArrayAsync(keys).join();
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public <T> Map<String, T> getMap(final Type componentType, final String... keys) {
+        return (Map) getMapAsync(componentType, keys).join();
+    }
+
+    @Override
+    public <T> Map<String, Collection<T>> getCollectionMap(final boolean set, final Type componentType, String... keys) {
+        return (Map) getCollectionMapAsync(set, componentType, keys).join();
+    }
+
+    @Override
     public CompletableFuture<Collection<String>> getStringCollectionAsync(String key) {
-        return sendAsync(RedisCommand.TYPE, key, keyArgs(key)).thenCompose(t -> {
-            String type = t.getObjectValue(key, cryptor, String.class);
-            if (type == null) {
-                return CompletableFuture.completedFuture(null);
+        return (CompletableFuture) send("TYPE", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(null);
+            if (new String((byte[]) t).contains("list")) { //list
+                return send("LRANGE", CacheEntryType.STRING, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'});
+            } else {
+                return send("SMEMBERS", CacheEntryType.STRING, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8));
             }
-            boolean set = !type.contains("list");
-            return sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1)).thenApply(v -> set ? v.getSetValue(key, cryptor, String.class) : v.getListValue(key, cryptor, String.class));
         });
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
     public CompletableFuture<Map<String, Collection<String>>> getStringCollectionMapAsync(final boolean set, String... keys) {
         final CompletableFuture<Map<String, Collection<String>>> rsFuture = new CompletableFuture<>();
-        final Map<String, Collection<String>> map = new LinkedHashMap<>();
-        final ReentrantLock mapLock = new ReentrantLock();
+        final Map<String, Collection<String>> map = new HashMap<>();
         final CompletableFuture[] futures = new CompletableFuture[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            final String key = keys[i];
-            futures[i] = sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1)).thenAccept(v -> {
-                Collection<String> c = set ? v.getSetValue(key, cryptor, String.class) : v.getListValue(key, cryptor, String.class);
-                if (c != null) {
-                    mapLock.lock();
-                    try {
-                        map.put(key, (Collection) c);
-                    } finally {
-                        mapLock.unlock();
+        if (!set) { //list
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("LRANGE", CacheEntryType.STRING, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'}).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
                     }
-                }
-            });
+                });
+            }
+        } else {
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("SMEMBERS", CacheEntryType.STRING, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8)).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
+                    }
+                });
+            }
         }
         CompletableFuture.allOf(futures).whenComplete((w, e) -> {
             if (e != null) {
@@ -1287,39 +1178,54 @@ public class RedisCacheSource extends AbstractRedisSource {
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
+    public Collection<String> getStringCollection(String key) {
+        return getStringCollectionAsync(key).join();
+    }
+
+    @Override
+    public Map<String, Collection<String>> getStringCollectionMap(final boolean set, String... keys) {
+        return getStringCollectionMapAsync(set, keys).join();
+    }
+
+    @Override
     public CompletableFuture<Collection<Long>> getLongCollectionAsync(String key) {
-        return sendAsync(RedisCommand.TYPE, key, keyArgs(key)).thenCompose(t -> {
-            String type = t.getObjectValue(key, cryptor, String.class);
-            if (type == null) {
-                return CompletableFuture.completedFuture(null);
+        return (CompletableFuture) send("TYPE", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(null);
+            if (new String((byte[]) t).contains("list")) { //list
+                return send("LRANGE", CacheEntryType.LONG, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'});
+            } else {
+                return send("SMEMBERS", CacheEntryType.LONG, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8));
             }
-            boolean set = !type.contains("list");
-            return sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1))
-                .thenApply(v -> set ? v.getSetValue(key, cryptor, long.class) : v.getListValue(key, cryptor, long.class));
         });
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
     public CompletableFuture<Map<String, Collection<Long>>> getLongCollectionMapAsync(final boolean set, String... keys) {
         final CompletableFuture<Map<String, Collection<Long>>> rsFuture = new CompletableFuture<>();
-        final Map<String, Collection<Long>> map = new LinkedHashMap<>();
-        final ReentrantLock mapLock = new ReentrantLock();
+        final Map<String, Collection<Long>> map = new HashMap<>();
         final CompletableFuture[] futures = new CompletableFuture[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            final String key = keys[i];
-            futures[i] = sendAsync(set ? RedisCommand.SMEMBERS : RedisCommand.LRANGE, key, set ? keyArgs(key) : keyArgs(key, 0, -1)).thenAccept(v -> {
-                Collection<Long> c = set ? v.getSetValue(key, cryptor, long.class) : v.getListValue(key, cryptor, long.class);
-                if (c != null) {
-                    mapLock.lock();
-                    try {
-                        map.put(key, (Collection) c);
-                    } finally {
-                        mapLock.unlock();
+        if (!set) { //list
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("LRANGE", CacheEntryType.LONG, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, new byte[]{'-', '1'}).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
                     }
-                }
-            });
+                });
+            }
+        } else {
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                futures[i] = send("SMEMBERS", CacheEntryType.LONG, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8)).thenAccept(c -> {
+                    if (c != null) {
+                        synchronized (map) {
+                            map.put(key, (Collection) c);
+                        }
+                    }
+                });
+            }
         }
         CompletableFuture.allOf(futures).whenComplete((w, e) -> {
             if (e != null) {
@@ -1331,23 +1237,1004 @@ public class RedisCacheSource extends AbstractRedisSource {
         return rsFuture;
     }
 
-    //--------------------- getexCollection ------------------------------  
     @Override
-    @Deprecated(since = "2.8.0")
-    public <T> CompletableFuture<Collection<T>> getexCollectionAsync(String key, int expireSeconds, final Type componentType) {
-        return (CompletableFuture) expireAsync(key, expireSeconds).thenCompose(v -> getCollectionAsync(key, componentType));
+    public Collection<Long> getLongCollection(String key) {
+        return getLongCollectionAsync(key).join();
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
-    public CompletableFuture<Collection<String>> getexStringCollectionAsync(String key, int expireSeconds) {
-        return (CompletableFuture) expireAsync(key, expireSeconds).thenCompose(v -> getStringCollectionAsync(key));
+    public Map<String, Collection<Long>> getLongCollectionMap(final boolean set, String... keys) {
+        return getLongCollectionMapAsync(set, keys).join();
+    }
+
+    //--------------------- getCollectionAndRefresh ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Collection<V>> getCollectionAndRefreshAsync(String key, int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getCollectionAsync(key));
     }
 
     @Override
-    @Deprecated(since = "2.8.0")
-    public CompletableFuture<Collection<Long>> getexLongCollectionAsync(String key, int expireSeconds) {
-        return (CompletableFuture) expireAsync(key, expireSeconds).thenCompose(v -> getLongCollectionAsync(key));
+    public <T> CompletableFuture<Collection<T>> getCollectionAndRefreshAsync(String key, int expireSeconds, final Type componentType) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getCollectionAsync(key, componentType));
+    }
+
+    @Override
+    @Deprecated
+    public Collection<V> getCollectionAndRefresh(String key, final int expireSeconds) {
+        return getCollectionAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    @Override
+    public <T> Collection<T> getCollectionAndRefresh(String key, final int expireSeconds, final Type componentType) {
+        return (Collection) getCollectionAndRefreshAsync(key, expireSeconds, componentType).join();
+    }
+
+    @Override
+    public CompletableFuture<Collection<String>> getStringCollectionAndRefreshAsync(String key, int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getStringCollectionAsync(key));
+    }
+
+    @Override
+    public Collection<String> getStringCollectionAndRefresh(String key, final int expireSeconds) {
+        return getStringCollectionAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    @Override
+    public CompletableFuture<Collection<Long>> getLongCollectionAndRefreshAsync(String key, int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getLongCollectionAsync(key));
+    }
+
+    @Override
+    public Collection<Long> getLongCollectionAndRefresh(String key, final int expireSeconds) {
+        return getLongCollectionAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    //--------------------- existsItem ------------------------------
+    @Override
+    @Deprecated
+    public boolean existsSetItem(String key, V value) {
+        return existsSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public <T> boolean existsSetItem(String key, final Type componentType, T value) {
+        return existsSetItemAsync(key, componentType, value).join();
+    }
+
+    @Override
+    @Deprecated
+    public CompletableFuture<Boolean> existsSetItemAsync(String key, V value) {
+        return (CompletableFuture) send("SISMEMBER", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Boolean> existsSetItemAsync(String key, final Type componentType, T value) {
+        return (CompletableFuture) send("SISMEMBER", null, componentType, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, componentType, value));
+    }
+
+    @Override
+    public boolean existsStringSetItem(String key, String value) {
+        return existsStringSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Boolean> existsStringSetItemAsync(String key, String value) {
+        return (CompletableFuture) send("SISMEMBER", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public boolean existsLongSetItem(String key, long value) {
+        return existsLongSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Boolean> existsLongSetItemAsync(String key, long value) {
+        return (CompletableFuture) send("SISMEMBER", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    //--------------------- appendListItem ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Void> appendListItemAsync(String key, V value) {
+        return (CompletableFuture) send("RPUSH", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> appendListItemAsync(String key, final Type componentType, T value) {
+        return (CompletableFuture) send("RPUSH", null, componentType, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, componentType, value));
+    }
+
+    @Override
+    @Deprecated
+    public void appendListItem(String key, V value) {
+        appendListItemAsync(key, value).join();
+    }
+
+    @Override
+    public <T> void appendListItem(String key, final Type componentType, T value) {
+        appendListItemAsync(key, componentType, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> appendStringListItemAsync(String key, String value) {
+        return (CompletableFuture) send("RPUSH", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public void appendStringListItem(String key, String value) {
+        appendStringListItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> appendLongListItemAsync(String key, long value) {
+        return (CompletableFuture) send("RPUSH", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public void appendLongListItem(String key, long value) {
+        appendLongListItemAsync(key, value).join();
+    }
+
+    //--------------------- removeListItem ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Integer> removeListItemAsync(String key, V value) {
+        return (CompletableFuture) send("LREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Integer> removeListItemAsync(String key, final Type componentType, T value) {
+        return (CompletableFuture) send("LREM", null, componentType, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, formatValue(CacheEntryType.OBJECT, (Convert) null, componentType, value));
+    }
+
+    @Override
+    @Deprecated
+    public int removeListItem(String key, V value) {
+        return removeListItemAsync(key, value).join();
+    }
+
+    @Override
+    public <T> int removeListItem(String key, final Type componentType, T value) {
+        return removeListItemAsync(key, componentType, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> removeStringListItemAsync(String key, String value) {
+        return (CompletableFuture) send("LREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public int removeStringListItem(String key, String value) {
+        return removeStringListItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> removeLongListItemAsync(String key, long value) {
+        return (CompletableFuture) send("LREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), new byte[]{'0'}, formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public int removeLongListItem(String key, long value) {
+        return removeLongListItemAsync(key, value).join();
+    }
+
+    //--------------------- appendSetItem ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Void> appendSetItemAsync(String key, V value) {
+        return (CompletableFuture) send("SADD", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> appendSetItemAsync(String key, Type componentType, T value) {
+        return (CompletableFuture) send("SADD", null, componentType, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, componentType, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<T> spopSetItemAsync(String key, Type componentType) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.OBJECT, componentType, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public <T> CompletableFuture<List<T>> spopSetItemAsync(String key, int count, Type componentType) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.OBJECT, componentType, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(count).getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<String> spopStringSetItemAsync(String key) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.STRING, String.class, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<List<String>> spopStringSetItemAsync(String key, int count) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.STRING, String.class, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(count).getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<Long> spopLongSetItemAsync(String key) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.LONG, long.class, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<List<Long>> spopLongSetItemAsync(String key, int count) {
+        return (CompletableFuture) send("SPOP", CacheEntryType.LONG, long.class, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(count).getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    @Deprecated
+    public void appendSetItem(String key, V value) {
+        appendSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public <T> void appendSetItem(String key, final Type componentType, T value) {
+        appendSetItemAsync(key, componentType, value).join();
+    }
+
+    @Override
+    public <T> T spopSetItem(String key, final Type componentType) {
+        return (T) spopSetItemAsync(key, componentType).join();
+    }
+
+    @Override
+    public <T> List<T> spopSetItem(String key, int count, final Type componentType) {
+        return (List) spopSetItemAsync(key, count, componentType).join();
+    }
+
+    @Override
+    public String spopStringSetItem(String key) {
+        return spopStringSetItemAsync(key).join();
+    }
+
+    @Override
+    public List<String> spopStringSetItem(String key, int count) {
+        return spopStringSetItemAsync(key, count).join();
+    }
+
+    @Override
+    public Long spopLongSetItem(String key) {
+        return spopLongSetItemAsync(key).join();
+    }
+
+    @Override
+    public List<Long> spopLongSetItem(String key, int count) {
+        return spopLongSetItemAsync(key, count).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> appendStringSetItemAsync(String key, String value) {
+        return (CompletableFuture) send("SADD", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public void appendStringSetItem(String key, String value) {
+        appendStringSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Void> appendLongSetItemAsync(String key, long value) {
+        return (CompletableFuture) send("SADD", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public void appendLongSetItem(String key, long value) {
+        appendLongSetItemAsync(key, value).join();
+    }
+
+    //--------------------- removeSetItem ------------------------------
+    @Override
+    @Deprecated
+    public CompletableFuture<Integer> removeSetItemAsync(String key, V value) {
+        return (CompletableFuture) send("SREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Integer> removeSetItemAsync(String key, final Type componentType, T value) {
+        return (CompletableFuture) send("SREM", null, componentType, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, componentType, value));
+    }
+
+    @Override
+    @Deprecated
+    public int removeSetItem(String key, V value) {
+        return removeSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public <T> int removeSetItem(String key, final Type componentType, T value) {
+        return removeSetItemAsync(key, componentType, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> removeStringSetItemAsync(String key, String value) {
+        return (CompletableFuture) send("SREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.STRING, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public int removeStringSetItem(String key, String value) {
+        return removeStringSetItemAsync(key, value).join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> removeLongSetItemAsync(String key, long value) {
+        return (CompletableFuture) send("SREM", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.LONG, (Convert) null, (Type) null, value));
+    }
+
+    @Override
+    public int removeLongSetItem(String key, long value) {
+        return removeLongSetItemAsync(key, value).join();
+    }
+
+    //--------------------- queryKeys ------------------------------
+    @Override
+    public List<String> queryKeys() {
+        return queryKeysAsync().join();
+    }
+
+    @Override
+    public List<String> queryKeysStartsWith(String startsWith) {
+        return queryKeysStartsWithAsync(startsWith).join();
+    }
+
+    @Override
+    public List<String> queryKeysEndsWith(String endsWith) {
+        return queryKeysEndsWithAsync(endsWith).join();
+    }
+
+    @Override
+    public byte[] getBytes(final String key) {
+        return getBytesAsync(key).join();
+    }
+
+    @Override
+    public byte[] getBytesAndRefresh(final String key, final int expireSeconds) {
+        return getBytesAndRefreshAsync(key, expireSeconds).join();
+    }
+
+    @Override
+    public void setBytes(final String key, final byte[] value) {
+        setBytesAsync(key, value).join();
+    }
+
+    @Override
+    public void setBytes(final int expireSeconds, final String key, final byte[] value) {
+        setBytesAsync(expireSeconds, key, value).join();
+    }
+
+    @Override
+    public <T> void setBytes(final String key, final Convert convert, final Type type, final T value) {
+        setBytesAsync(key, convert, type, value).join();
+    }
+
+    @Override
+    public <T> void setBytes(final int expireSeconds, final String key, final Convert convert, final Type type, final T value) {
+        setBytesAsync(expireSeconds, key, convert, type, value).join();
+    }
+
+    @Override
+    public CompletableFuture<byte[]> getBytesAsync(final String key) {
+        return (CompletableFuture) send("GET", CacheEntryType.BYTES, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<byte[]> getBytesAndRefreshAsync(final String key, final int expireSeconds) {
+        return (CompletableFuture) refreshAsync(key, expireSeconds).thenCompose(v -> getBytesAsync(key));
+    }
+
+    @Override
+    public CompletableFuture<Void> setBytesAsync(final String key, final byte[] value) {
+        return (CompletableFuture) send("SET", CacheEntryType.BYTES, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), value);
+
+    }
+
+    @Override
+    public CompletableFuture<Void> setBytesAsync(final int expireSeconds, final String key, final byte[] value) {
+        return (CompletableFuture) setBytesAsync(key, value).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setBytesAsync(final String key, final Convert convert, final Type type, final T value) {
+        return (CompletableFuture) send("SET", CacheEntryType.BYTES, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), convert.convertToBytes(type, value));
+    }
+
+    @Override
+    public <T> CompletableFuture<Void> setBytesAsync(final int expireSeconds, final String key, final Convert convert, final Type type, final T value) {
+        return (CompletableFuture) setBytesAsync(key, convert.convertToBytes(type, value)).thenCompose(v -> setExpireSecondsAsync(key, expireSeconds));
+    }
+
+    @Override
+    public CompletableFuture<List<String>> queryKeysAsync() {
+        return (CompletableFuture) send("KEYS", null, (Type) null, "*", new byte[]{(byte) '*'});
+    }
+
+    @Override
+    public CompletableFuture<List<String>> queryKeysStartsWithAsync(String startsWith) {
+        if (startsWith == null) return queryKeysAsync();
+        String key = startsWith + "*";
+        return (CompletableFuture) send("KEYS", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public CompletableFuture<List<String>> queryKeysEndsWithAsync(String endsWith) {
+        if (endsWith == null) return queryKeysAsync();
+        String key = "*" + endsWith;
+        return (CompletableFuture) send("KEYS", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    //--------------------- getKeySize ------------------------------
+    @Override
+    public int getKeySize() {
+        return getKeySizeAsync().join();
+    }
+
+    @Override
+    public CompletableFuture<Integer> getKeySizeAsync() {
+        return (CompletableFuture) send("DBSIZE", null, (Type) null, null);
+    }
+
+    //--------------------- queryList ------------------------------
+    @Override
+    public List<CacheEntry<Object>> queryList() {
+        return queryListAsync().join();
+    }
+
+    @Override
+    public CompletableFuture<List<CacheEntry<Object>>> queryListAsync() {
+        return CompletableFuture.completedFuture(new ArrayList<>()); //不返回数据
+    }
+
+    //--------------------- send ------------------------------
+    private byte[] formatValue(CacheEntryType cacheType, Convert convert0, Type resultType, Object value) {
+        if (value == null) return "null".getBytes(StandardCharsets.UTF_8);
+        if (value instanceof byte[]) return (byte[]) value;
+        if (convert0 == null) convert0 = convert;
+        if (cacheType == CacheEntryType.MAP) {
+            if ((value instanceof CharSequence) || (value instanceof Number)) {
+                return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+            }
+            if (objValueType == String.class && !(value instanceof CharSequence)) resultType = value.getClass();
+            return convert0.convertToBytes(resultType == null ? objValueType : resultType, value);
+        }
+        if (cacheType == CacheEntryType.LONG || cacheType == CacheEntryType.ATOMIC || value.getClass() == String.class)
+            return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        if (cacheType == CacheEntryType.STRING) return convert0.convertToBytes(String.class, value);
+        return convert0.convertToBytes(resultType == null ? objValueType : resultType, value);
+    }
+
+    protected CompletableFuture<Serializable> send(final String command, final CacheEntryType cacheType, final Type resultType, final String key, final byte[]... args) {
+        return send(command, cacheType, resultType, false, key, args);
+    }
+
+    protected CompletableFuture<Serializable> send(final String command, final CacheEntryType cacheType, final Type resultType, final boolean set, final String key, final byte[]... args) {
+        return send(null, command, cacheType, resultType, set, key, args);
+    }
+
+    private CompletableFuture<Serializable> send(final CompletionHandler callback, final String command, final CacheEntryType cacheType, final Type resultType, final boolean set, final String key, final byte[]... args) {
+        final BsonByteBufferWriter writer = new BsonByteBufferWriter(transport.getBufferSupplier());
+        writer.writeTo(ASTERISK_BYTE);
+        writer.writeTo(String.valueOf(args.length + 1).getBytes(StandardCharsets.UTF_8));
+        writer.writeTo((byte) '\r', (byte) '\n');
+        writer.writeTo(DOLLAR_BYTE);
+        writer.writeTo(String.valueOf(command.length()).getBytes(StandardCharsets.UTF_8));
+        writer.writeTo((byte) '\r', (byte) '\n');
+        writer.writeTo(command.getBytes(StandardCharsets.UTF_8));
+        writer.writeTo((byte) '\r', (byte) '\n');
+
+        for (final byte[] arg : args) {
+            writer.writeTo(DOLLAR_BYTE);
+            writer.writeTo(String.valueOf(arg.length).getBytes(StandardCharsets.UTF_8));
+            writer.writeTo((byte) '\r', (byte) '\n');
+            writer.writeTo(arg);
+            writer.writeTo((byte) '\r', (byte) '\n');
+        }
+
+        final ByteBuffer[] buffers = writer.toBuffers();
+
+        final CompletableFuture<Serializable> future = callback == null ? new CompletableFuture<>() : null;
+        CompletableFuture<AsyncConnection> connFuture = this.transport.pollConnection(null);
+        if (passwords != null) {
+            connFuture = connFuture.thenCompose(conn -> {
+                if (conn.getSubobject() != null) return CompletableFuture.completedFuture(conn);
+                byte[] password = passwords.get(conn.getRemoteAddress());
+                if (password == null) return CompletableFuture.completedFuture(conn);
+                CompletableFuture<AsyncConnection> rs = auth(conn, password, command);
+                if (db > 0) {
+                    rs = rs.thenCompose(conn2 -> {
+                        if (conn2.getSubobject() != null) return CompletableFuture.completedFuture(conn2);
+                        return selectdb(conn2, db, command);
+                    });
+                }
+                return rs;
+            });
+        } else if (db > 0) {
+            connFuture = connFuture.thenCompose(conn2 -> {
+                if (conn2.getSubobject() != null) return CompletableFuture.completedFuture(conn2);
+                return selectdb(conn2, db, command);
+            });
+        }
+        connFuture.whenComplete((conn, ex) -> {
+            if (ex != null) {
+                transport.offerBuffer(buffers);
+                if (future == null) {
+                    callback.failed(ex, null);
+                } else {
+                    future.completeExceptionally(ex);
+                }
+                return;
+            }
+            conn.write(buffers, buffers, new CompletionHandler<Integer, ByteBuffer[]>() {
+                @Override
+                public void completed(Integer result, ByteBuffer[] attachments) {
+                    int index = -1;
+                    try {
+                        for (int i = 0; i < attachments.length; i++) {
+                            if (attachments[i].hasRemaining()) {
+                                index = i;
+                                break;
+                            } else {
+                                transport.offerBuffer(attachments[i]);
+                            }
+                        }
+                        if (index == 0) {
+                            conn.write(attachments, attachments, this);
+                            return;
+                        } else if (index > 0) {
+                            ByteBuffer[] newattachs = new ByteBuffer[attachments.length - index];
+                            System.arraycopy(attachments, index, newattachs, 0, newattachs.length);
+                            conn.write(newattachs, newattachs, this);
+                            return;
+                        }
+                        //----------------------- 读取返回结果 -------------------------------------
+                        conn.read(new ReplyCompletionHandler(conn) {
+                            @Override
+                            public void completed(Integer result, ByteBuffer buffer) {
+                                buffer.flip();
+                                try {
+                                    final byte sign = buffer.get();
+                                    if (sign == PLUS_BYTE) { // +
+                                        byte[] bs = readBytes(buffer);
+                                        if (future == null) {
+                                            transport.offerConnection(false, conn); //必须在complete之前，防止并发是conn还没回收完毕
+                                            callback.completed(null, key);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            future.complete(("SET".equals(command) || "HSET".equals(command)) ? null : bs);
+                                        }
+                                    } else if (sign == MINUS_BYTE) { // -
+                                        String bs = readString(buffer);
+                                        if (future == null) {
+                                            transport.offerConnection(false, conn);
+                                            callback.failed(new RuntimeException(bs), key);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            future.completeExceptionally(new RuntimeException("command : " + command + ", error: " + bs));
+                                        }
+                                    } else if (sign == COLON_BYTE) { // :
+                                        long rs = readLong(buffer);
+                                        if (future == null) {
+                                            if (command.startsWith("INCR") || command.startsWith("DECR") || command.startsWith("HINCR")) {
+                                                transport.offerConnection(false, conn);
+                                                callback.completed(rs, key);
+                                            } else {
+                                                transport.offerConnection(false, conn);
+                                                callback.completed((command.endsWith("EXISTS") || "SISMEMBER".equals(command)) ? (rs > 0) : (("LLEN".equals(command) || "SCARD".equals(command) || "SREM".equals(command) || "LREM".equals(command) || "DEL".equals(command) || "HDEL".equals(command) || "HLEN".equals(command) || "DBSIZE".equals(command)) ? (int) rs : null), key);
+                                            }
+                                        } else {
+                                            if (command.startsWith("INCR") || command.startsWith("DECR") || command.startsWith("HINCR") || command.startsWith("HGET")) {
+                                                transport.offerConnection(false, conn);
+                                                future.complete(rs);
+                                            } else if (command.equals("ZRANK") || command.equals("ZREVRANK")) {
+                                                transport.offerConnection(false, conn);
+                                                future.complete(rs);
+                                            } else if (command.equals("GETBIT")) {
+                                                transport.offerConnection(false, conn);
+                                                future.complete(rs);
+                                            } else if (command.equals("TTL") || command.equals("PTTL")) {
+                                                transport.offerConnection(false, conn);
+                                                future.complete(rs);
+                                            } else if (command.equals("SETNX")) {
+                                                transport.offerConnection(false, conn);
+                                                future.complete(rs);
+                                            } else {
+                                                transport.offerConnection(false, conn);
+                                                future.complete((command.endsWith("EXISTS") || "SISMEMBER".equals(command)) ? (rs > 0) : (("LLEN".equals(command) || "SCARD".equals(command) || "SREM".equals(command) || "LREM".equals(command) || "DEL".equals(command) || "HDEL".equals(command) || "HLEN".equals(command) || "DBSIZE".equals(command) || "ZCARD".equals(command) || "EVAL".equals(command)) ? (int) rs : null));
+                                            }
+                                        }
+                                    } else if (sign == DOLLAR_BYTE) { // $
+                                        long val = readLong(buffer);
+                                        byte[] rs = val <= 0 ? null : readBytes(buffer);
+                                        Type ct = cacheType == CacheEntryType.LONG ? long.class : (cacheType == CacheEntryType.STRING ? String.class : (resultType == null ? objValueType : resultType));
+                                        if (future == null) {
+                                            transport.offerConnection(false, conn);
+                                            callback.completed((("SPOP".equals(command) || command.endsWith("GET") || rs == null) ? (ct == String.class && rs != null ? new String(rs, StandardCharsets.UTF_8) : convert.convertFrom(ct, new String(rs, StandardCharsets.UTF_8))) : null), key);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            if ("ZSCORE".equals(command)) {
+                                                future.complete(ct == String.class && rs != null ? new String(rs, StandardCharsets.UTF_8) : convert.convertFrom(ct, rs == null ? null : new String(rs, StandardCharsets.UTF_8)));
+                                            } else if (command.equals("HINCRBYFLOAT")) {
+                                                future.complete(new String(rs, StandardCharsets.UTF_8));
+                                            } else {
+                                                future.complete("SPOP".equals(command) || command.endsWith("GET") || command.endsWith("ZINCRBY") ? (ct == String.class && rs != null ? new String(rs, StandardCharsets.UTF_8) : convert.convertFrom(ct, rs == null ? null : new String(rs, StandardCharsets.UTF_8))) : rs);
+                                            }
+                                        }
+                                    } else if (sign == ASTERISK_BYTE) { // *
+                                        final int len = readInt(buffer);
+                                        if (len < 0) {
+                                            if (future == null) {
+                                                transport.offerConnection(false, conn);
+                                                callback.completed(null, key);
+                                            } else {
+                                                transport.offerConnection(false, conn);
+                                                future.complete((byte[]) null);
+                                            }
+                                        } else {
+                                            Object rsobj;
+                                            if (command.endsWith("SCAN")) {
+                                                LinkedHashMap rs = new LinkedHashMap();
+                                                rsobj = rs;
+                                                for (int i = 0; i < len; i++) {
+                                                    int l = readInt(buffer);
+                                                    if (l > 0) {
+                                                        readBytes(buffer);
+                                                    } else {
+                                                        while (buffer.hasRemaining()) {
+                                                            readBytes(buffer);
+                                                            String field = new String(readBytes(buffer), StandardCharsets.UTF_8);
+                                                            String value = null;
+                                                            if (readInt(buffer) > 0) {
+                                                                value = new String(readBytes(buffer), StandardCharsets.UTF_8);
+                                                            }
+                                                            Type ct = cacheType == CacheEntryType.LONG ? long.class : (cacheType == CacheEntryType.STRING ? String.class : (resultType == null ? objValueType : resultType));
+                                                            try {
+                                                                rs.put(field, value == null ? null : (ct == String.class ? value : convert.convertFrom(ct, value)));
+                                                            } catch (RuntimeException e) {
+                                                                buffer.flip();
+                                                                byte[] bsss = new byte[buffer.remaining()];
+                                                                buffer.get(bsss);
+                                                                logger.log(Level.SEVERE, "异常: " + new String(bsss));
+                                                                throw e;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Collection rs = set ? new HashSet() : new ArrayList();
+                                                rsobj = rs;
+                                                boolean keys = "KEYS".equals(command) || "HKEYS".equals(command);
+                                                boolean mget = !keys && ("MGET".equals(command) || "HMGET".equals(command));
+                                                boolean zsetscore = !keys && ("ZREVRANGE".equals(command) || "ZRANGE".equals(command));
+                                                boolean hgetall = !keys && "HGETALL".equals(command);
+                                                boolean lpop = !keys && "BRPOP".equals(command);
+                                                Type ct = cacheType == CacheEntryType.LONG ? long.class : (cacheType == CacheEntryType.STRING ? String.class : (resultType == null ? objValueType : resultType));
+                                                for (int i = 0; i < len; i++) {
+                                                    int l = readInt(buffer);
+                                                    if (l > 0) {
+                                                        // 1、zsetscore 查询 偶数元素统一返回 string 方法内自定义转换
+                                                        // 2、hgetall 基数元素返回 string
+                                                        if ((zsetscore && rs.size() % 2 == 1) || (hgetall && rs.size() % 2 == 0)) {
+                                                            rs.add(readString(buffer));
+                                                        } else if (lpop && i == 1) {
+                                                            rsobj = convert.convertFrom(ct, new String(readBytes(buffer), StandardCharsets.UTF_8));
+                                                        } else {
+                                                            rs.add(keys ? new String(readBytes(buffer), StandardCharsets.UTF_8) : (ct == String.class ? new String(readBytes(buffer), StandardCharsets.UTF_8) : convert.convertFrom(ct, new String(readBytes(buffer), StandardCharsets.UTF_8))));
+                                                        }
+                                                    } else if (mget) {
+                                                        rs.add(null);
+                                                    }
+                                                }
+                                            }
+                                            if (future == null) {
+                                                transport.offerConnection(false, conn);
+                                                callback.completed(rsobj, key);
+                                            } else {
+                                                transport.offerConnection(false, conn);
+                                                future.complete((Serializable) rsobj);
+                                            }
+                                        }
+                                    } else {
+                                        String exstr = "Unknown reply: " + (char) sign;
+                                        if (future == null) {
+                                            transport.offerConnection(false, conn);
+                                            callback.failed(new RuntimeException(exstr), key);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            future.completeExceptionally(new RuntimeException(exstr));
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    logger.log(Level.WARNING, "", e);
+                                    failed(e, buffer);
+                                }
+                            }
+
+                            @Override
+                            public void failed(Throwable exc, ByteBuffer attachment) {
+                                conn.offerBuffer(attachment);
+                                transport.offerConnection(true, conn);
+                                if (future == null) {
+                                    callback.failed(exc, attachments);
+                                } else {
+                                    future.completeExceptionally(exc);
+                                }
+                            }
+
+                        });
+                    } catch (Exception e) {
+                        failed(e, attachments);
+                    }
+                }
+
+                @Override
+                public void failed(Throwable exc, ByteBuffer[] attachments) {
+                    transport.offerConnection(true, conn);
+                    if (future == null) {
+                        callback.failed(exc, attachments);
+                    } else {
+                        future.completeExceptionally(exc);
+                    }
+                }
+            });
+        });
+        return future; //.orTimeout(3, TimeUnit.SECONDS)  JDK9以上才支持
+    }
+
+    private CompletableFuture<AsyncConnection> selectdb(final AsyncConnection conn, final int db, final String command) {
+        final CompletableFuture<AsyncConnection> rsfuture = new CompletableFuture();
+        try {
+            final BsonByteBufferWriter dbwriter = new BsonByteBufferWriter(transport.getBufferSupplier());
+            dbwriter.writeTo(ASTERISK_BYTE);
+            dbwriter.writeTo((byte) '2');
+            dbwriter.writeTo((byte) '\r', (byte) '\n');
+            dbwriter.writeTo(DOLLAR_BYTE);
+            dbwriter.writeTo((byte) '6');
+            dbwriter.writeTo((byte) '\r', (byte) '\n');
+            dbwriter.writeTo("SELECT".getBytes(StandardCharsets.UTF_8));
+            dbwriter.writeTo((byte) '\r', (byte) '\n');
+
+            dbwriter.writeTo(DOLLAR_BYTE);
+            dbwriter.writeTo(String.valueOf(String.valueOf(db).length()).getBytes(StandardCharsets.UTF_8));
+            dbwriter.writeTo((byte) '\r', (byte) '\n');
+            dbwriter.writeTo(String.valueOf(db).getBytes(StandardCharsets.UTF_8));
+            dbwriter.writeTo((byte) '\r', (byte) '\n');
+
+            final ByteBuffer[] authbuffers = dbwriter.toBuffers();
+            conn.write(authbuffers, authbuffers, new CompletionHandler<Integer, ByteBuffer[]>() {
+                @Override
+                public void completed(Integer result, ByteBuffer[] attachments) {
+                    int index = -1;
+                    try {
+                        for (int i = 0; i < attachments.length; i++) {
+                            if (attachments[i].hasRemaining()) {
+                                index = i;
+                                break;
+                            } else {
+                                transport.offerBuffer(attachments[i]);
+                            }
+                        }
+                        if (index == 0) {
+                            conn.write(attachments, attachments, this);
+                            return;
+                        } else if (index > 0) {
+                            ByteBuffer[] newattachs = new ByteBuffer[attachments.length - index];
+                            System.arraycopy(attachments, index, newattachs, 0, newattachs.length);
+                            conn.write(newattachs, newattachs, this);
+                            return;
+                        }
+                        //----------------------- 读取返回结果 -------------------------------------
+                        conn.read(new ReplyCompletionHandler(conn) {
+                            @Override
+                            public void completed(Integer result, ByteBuffer buffer) {
+                                buffer.flip();
+                                try {
+                                    final byte sign = buffer.get();
+                                    if (sign == PLUS_BYTE) { // +
+                                        byte[] bs = readBytes(buffer);
+                                        if ("OK".equalsIgnoreCase(new String(bs))) {
+                                            conn.setSubobject("authed+db");
+                                            rsfuture.complete(conn);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            rsfuture.completeExceptionally(new RuntimeException("command : " + command + ", error: " + bs));
+                                        }
+                                    } else if (sign == MINUS_BYTE) { // -   异常
+                                        String bs = readString(buffer);
+                                        transport.offerConnection(false, conn);
+                                        rsfuture.completeExceptionally(new RuntimeException("command : " + command + ", error: " + bs));
+                                    } else {
+                                        String exstr = "Unknown reply: " + (char) sign;
+                                        transport.offerConnection(false, conn);
+                                        rsfuture.completeExceptionally(new RuntimeException(exstr));
+                                    }
+                                } catch (Exception e) {
+                                    failed(e, buffer);
+                                }
+                            }
+
+                            @Override
+                            public void failed(Throwable exc, ByteBuffer buffer) {
+                                conn.offerBuffer(buffer);
+                                transport.offerConnection(true, conn);
+                                rsfuture.completeExceptionally(exc);
+                            }
+
+                        });
+                    } catch (Exception e) {
+                        failed(e, attachments);
+                    }
+                }
+
+                @Override
+                public void failed(Throwable exc, ByteBuffer[] attachments) {
+                    transport.offerConnection(true, conn);
+                    rsfuture.completeExceptionally(exc);
+                }
+            });
+        } catch (Exception e) {
+            rsfuture.completeExceptionally(e);
+        }
+        return rsfuture;
+    }
+
+    private CompletableFuture<AsyncConnection> auth(final AsyncConnection conn, final byte[] password, final String command) {
+        final CompletableFuture<AsyncConnection> rsfuture = new CompletableFuture();
+        try {
+            final BsonByteBufferWriter authwriter = new BsonByteBufferWriter(transport.getBufferSupplier());
+            authwriter.writeTo(ASTERISK_BYTE);
+            authwriter.writeTo((byte) '2');
+            authwriter.writeTo((byte) '\r', (byte) '\n');
+            authwriter.writeTo(DOLLAR_BYTE);
+            authwriter.writeTo((byte) '4');
+            authwriter.writeTo((byte) '\r', (byte) '\n');
+            authwriter.writeTo("AUTH".getBytes(StandardCharsets.UTF_8));
+            authwriter.writeTo((byte) '\r', (byte) '\n');
+
+            authwriter.writeTo(DOLLAR_BYTE);
+            authwriter.writeTo(String.valueOf(password.length).getBytes(StandardCharsets.UTF_8));
+            authwriter.writeTo((byte) '\r', (byte) '\n');
+            authwriter.writeTo(password);
+            authwriter.writeTo((byte) '\r', (byte) '\n');
+
+            final ByteBuffer[] authbuffers = authwriter.toBuffers();
+            conn.write(authbuffers, authbuffers, new CompletionHandler<Integer, ByteBuffer[]>() {
+                @Override
+                public void completed(Integer result, ByteBuffer[] attachments) {
+                    int index = -1;
+                    try {
+                        for (int i = 0; i < attachments.length; i++) {
+                            if (attachments[i].hasRemaining()) {
+                                index = i;
+                                break;
+                            } else {
+                                transport.offerBuffer(attachments[i]);
+                            }
+                        }
+                        if (index == 0) {
+                            conn.write(attachments, attachments, this);
+                            return;
+                        } else if (index > 0) {
+                            ByteBuffer[] newattachs = new ByteBuffer[attachments.length - index];
+                            System.arraycopy(attachments, index, newattachs, 0, newattachs.length);
+                            conn.write(newattachs, newattachs, this);
+                            return;
+                        }
+                        //----------------------- 读取返回结果 -------------------------------------
+                        conn.read(new ReplyCompletionHandler(conn) {
+                            @Override
+                            public void completed(Integer result, ByteBuffer buffer) {
+                                buffer.flip();
+                                try {
+                                    final byte sign = buffer.get();
+                                    if (sign == PLUS_BYTE) { // +
+                                        byte[] bs = readBytes(buffer);
+                                        if ("OK".equalsIgnoreCase(new String(bs))) {
+                                            conn.setSubobject("authed");
+                                            rsfuture.complete(conn);
+                                        } else {
+                                            transport.offerConnection(false, conn);
+                                            rsfuture.completeExceptionally(new RuntimeException("command : " + command + ", error: " + bs));
+                                        }
+                                    } else if (sign == MINUS_BYTE) { // -   异常
+                                        String bs = readString(buffer);
+                                        transport.offerConnection(false, conn);
+                                        rsfuture.completeExceptionally(new RuntimeException("command : " + command + ", error: " + bs));
+                                    } else {
+                                        String exstr = "Unknown reply: " + (char) sign;
+                                        transport.offerConnection(false, conn);
+                                        rsfuture.completeExceptionally(new RuntimeException(exstr));
+                                    }
+                                } catch (Exception e) {
+                                    failed(e, buffer);
+                                }
+                            }
+
+                            @Override
+                            public void failed(Throwable exc, ByteBuffer buffer) {
+                                conn.offerBuffer(buffer);
+                                transport.offerConnection(true, conn);
+                                rsfuture.completeExceptionally(exc);
+                            }
+
+                        });
+                    } catch (Exception e) {
+                        failed(e, attachments);
+                    }
+                }
+
+                @Override
+                public void failed(Throwable exc, ByteBuffer[] attachments) {
+                    transport.offerConnection(true, conn);
+                    rsfuture.completeExceptionally(exc);
+                }
+            });
+        } catch (Exception e) {
+            rsfuture.completeExceptionally(e);
+        }
+        return rsfuture;
+    }
+}
+
+abstract class ReplyCompletionHandler implements CompletionHandler<Integer, ByteBuffer> {
+
+    private final Logger logger = Logger.getLogger(this.getClass().getSimpleName());
+    protected final ByteArray out = new ByteArray();
+
+    protected final AsyncConnection conn;
+
+    public ReplyCompletionHandler(AsyncConnection conn) {
+        this.conn = conn;
+    }
+
+    protected byte[] readBytes(ByteBuffer buffer) throws IOException {
+        readLine(buffer);
+        return out.getBytesAndClear();
+    }
+
+    protected String readString(ByteBuffer buffer) throws IOException {
+        readLine(buffer);
+        return out.toStringAndClear(null);//传null则表示使用StandardCharsets.UTF_8 
+    }
+
+    protected int readInt(ByteBuffer buffer) throws IOException {
+        return (int) readLong(buffer);
+    }
+
+    protected long readLong(ByteBuffer buffer) throws IOException {
+        readLine(buffer);
+        int start = 0;
+        if (out.get(0) == '$') start = 1;
+        boolean negative = out.get(start) == '-';
+        long value = negative ? 0 : (out.get(start) - '0');
+        for (int i = 1 + start; i < out.size(); i++) {
+            value = value * 10 + (out.get(i) - '0');
+        }
+        out.clear();
+        return negative ? -value : value;
+    }
+
+    private void readLine(ByteBuffer buffer) throws IOException {
+        boolean has = buffer.hasRemaining();
+        byte lasted = has ? buffer.get() : 0;
+        if (lasted == '\n' && !out.isEmpty() && out.getLastByte() == '\r') {
+            out.removeLastByte();//读掉 \r
+            //buffer.get();//读掉 \n
+            //logger.info("打印buffer.get()---> " + buffer.get());
+            //logger.info("--- 打印buffer start --- ");
+            return;//传null则表示使用StandardCharsets.UTF_8
+        }
+        if (has) out.write(lasted);
+        while (buffer.hasRemaining()) {
+            byte b = buffer.get();
+            if (b == '\n' && lasted == '\r') {
+                out.removeLastByte();
+                return;
+            }
+            out.write(lasted = b);
+        }
+        //说明数据还没读取完
+        buffer.clear();
+        conn.readableByteChannel().read(buffer);
+        buffer.flip();
+        readLine(buffer);
     }
 
 }

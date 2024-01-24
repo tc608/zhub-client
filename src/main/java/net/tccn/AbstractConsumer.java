@@ -1,9 +1,9 @@
 package net.tccn;
 
 import org.redkale.convert.json.JsonConvert;
-import org.redkale.util.Resourcable;
 import org.redkale.util.TypeToken;
 
+import javax.annotation.Resource;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,11 +13,12 @@ import java.util.function.Consumer;
  * @author Liang
  * @data 2020-09-05 23:18
  */
-public abstract class AbstractConsumer extends ZhubAgentProvider implements IConsumer, Resourcable {
+public abstract class AbstractConsumer implements IConsumer {
 
     protected JsonConvert convert = JsonConvert.root();
 
-    protected static String APP_NAME = "";
+    @Resource(name = "APP_NAME")
+    protected String APP_NAME = "";
 
     private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
 
@@ -72,9 +73,4 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
     }
 
     // --------------
-
-    @Override
-    public String resourceName() {
-        return super.getName();
-    }
 }

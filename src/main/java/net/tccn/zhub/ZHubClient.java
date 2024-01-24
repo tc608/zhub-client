@@ -2,14 +2,9 @@ package net.tccn.zhub;
 
 import net.tccn.*;
 import net.tccn.timer.Timers;
-import org.redkale.annotation.AutoLoad;
-import org.redkale.annotation.ResourceType;
 import org.redkale.service.Local;
 import org.redkale.service.Service;
-import org.redkale.util.AnyValue;
-import org.redkale.util.Comment;
-import org.redkale.util.TypeToken;
-import org.redkale.util.Utility;
+import org.redkale.util.*;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -56,38 +51,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
 
     private static Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
 
-    public ZHubClient() {
-
-    }
-
-    public ZHubClient(String name, Map<String, String> attr) {
-        this.APP_NAME = name;
-        this.addr = attr.get("addr");
-        this.groupid = attr.get("groupid");
-        this.auth = attr.get("auth");
-
-        this.initClient(null);
-    }
-
     @Override
     public void init(AnyValue config) {
-        APP_NAME = application.getName();
-        /*if (!preInit()) {
-            return;
-        }*/
-
-        if (config == null) {
-            initClient(null);
-        } else {
-            Map<String, AnyValue> nodes = getNodes(config);
-            for (String rsName : nodes.keySet()) {
-                ZHubClient client = new ZHubClient().initClient(nodes.get(rsName));
-                application.getResourceFactory().register(rsName, client);
-            }
-        }
-    }
-
-    private ZHubClient initClient(AnyValue config) {
         // 自动注入
         if (config != null) {
             addr = config.getValue("addr", addr);
@@ -103,8 +68,10 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
 
         // 设置第一个启动的 实例为主实例
-        if (!mainHub.containsKey(addr)) { // 确保同步执行此 init 逻辑
-            mainHub.put(addr, this);
+        synchronized (ZHubClient.class) {
+            if (!mainHub.containsKey(addr)) { // 确保同步执行此 init 逻辑
+                mainHub.put(addr, this);
+            }
         }
 
         CompletableFuture.runAsync(() -> {
@@ -272,18 +239,17 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 while (true) {
                     Event<String> event = null;
                     try {
-                        event = rpcCallQueue.take();
-                        logger.info(String.format("rpc-call:[%s] %s", event.topic, event.value));
+                        event = rpcBackQueue.take();
+                        logger.info(String.format("rpc-back:[%s]", event.value));
 
-                        String topic = event.topic;
                         String value = event.value;
-                        executor.submit(() -> accept(topic, value)).get(5, TimeUnit.SECONDS);
+                        executor.submit(() -> rpcAccept(value)).get(5, TimeUnit.SECONDS);
                     } catch (InterruptedException | ExecutionException | TimeoutException e) {
                         if (e instanceof TimeoutException) {
                             executor = Executors.newSingleThreadExecutor();
-                            logger.log(Level.WARNING, "rpc-call TimeoutException, topic[" + event.topic + "], value[" + event.value + "]", e);
+                            logger.log(Level.WARNING, "rpc-back TimeoutException, topic[" + event.topic + "], value[" + event.value + "]", e);
                         } else if (event != null) {
-                            logger.log(Level.WARNING, "rpc-call[" + event.topic + "] event accept error :" + event.value, e);
+                            logger.log(Level.WARNING, "rpc-back[" + event.value + "] event accept error :" + event.value, e);
                         }
                     }
                 }
@@ -335,8 +301,6 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 }
             }).start();
         });
-
-        return this;
     }
 
     public boolean acceptsConf(AnyValue config) {
@@ -621,8 +585,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     private static Map<String, TypeToken> rpcRetType = new ConcurrentHashMap<>();
 
     @Comment("rpc call")
-    public RpcResult<Void> rpc(String topic, Object v) {
-        return rpc(topic, v, null);
+    public RpcResult<String> rpc(String topic, Object v) {
+        return rpc(topic, v, IType.STRING);
     }
 
     @Comment("rpc call")
@@ -671,8 +635,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         return rpc.getRpcResult();
     }
 
-    public <T, R> CompletableFuture<RpcResult<R>> rpcAsync(String topic, T v) {
-        return CompletableFuture.supplyAsync(() -> rpc(topic, v, null));
+    public <T> CompletableFuture<RpcResult<String>> rpcAsync(String topic, T v) {
+        return CompletableFuture.supplyAsync(() -> rpc(topic, v, IType.STRING));
     }
 
     public <T, R> CompletableFuture<RpcResult<R>> rpcAsync(String topic, T v, TypeToken<R> typeToken) {

@@ -1,173 +1,25 @@
-package net.tccn;
+package org.redkalex.cache.redis;
 
-import org.junit.Test;
-import org.redkale.net.AsyncIOGroup;
+import org.redkale.convert.json.JsonFactory;
 import org.redkale.util.AnyValue;
-import org.redkale.util.ResourceFactory;
-import org.redkalex.cache.redis.MyRedisCacheSource;
 
-import static org.redkale.boot.Application.RESNAME_APP_CLIENT_ASYNCGROUP;
-import static org.redkale.source.AbstractCacheSource.*;
+import java.util.Map;
 
 public class RedisTest {
 
-    static MyRedisCacheSource source = new MyRedisCacheSource();
+    static MyRedisCacheSource<String> source = new MyRedisCacheSource();
 
-    /**
-     * 3
-     */
-    @Test
-    public void keyTest() {
-        source.set("a", 3);
-        System.out.println(source.get("a"));
-        source.del("a");
-    }
-
-    /**
-     * ax:false
-     * ax:true
-     * ax:false
-     */
-    @Test
-    public void bitTest() {
-        boolean ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax); // false
-        source.setBit("ax", 6, true);
-
-        ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax); // true
-
-        source.setBit("ax", 6, false);
-        ax = source.getBit("ax", 6);
-        System.out.println("ax:"+ ax); // false
-        source.del("ax");
-    }
-
-    @Test
-    public void setTest() {
-        source.del("setx");
-        source.sadd("setx", int.class, 1, 2, 3, 5, 6);
-        int setx = source.spop("setx", int.class);
-        System.out.println(setx);
-
-        setx = source.spop("setx", int.class);
-        System.out.println(setx);
-        source.del("setx");
-
-
-        source.srem("setx", int.class,213, 2312);
-
-        /*//source.sadd("setx", list.toArray(Integer[]::new));
-        List<Integer> list = List.of(2, 3, 5);
-        // source.sadd("setx", list.toArray(Integer[]::new));
-        source.sadd("setx", list.toArray(Integer[]::new));
-        source.sadd("setx", 12, 2312, 213);
-        source.sadd("setx", List.of(1011, 10222));*/
-
-    }
-
-
-
-    static { // redis://:*Zhong9307!@47.111.150.118:6064?db=2
-        AnyValue.DefaultAnyValue conf = new AnyValue.DefaultAnyValue().addValue(CACHE_SOURCE_MAXCONNS, "1");
-        conf.addValue(CACHE_SOURCE_NODES, "redis://:123456@127.0.0.1:6379?db=0");
-
-        final ResourceFactory factory = ResourceFactory.create();
-        final AsyncIOGroup asyncGroup = new AsyncIOGroup(8192, 16);
-        asyncGroup.start();
-        factory.register(RESNAME_APP_CLIENT_ASYNCGROUP, asyncGroup);
-        factory.inject(source);
-        //source.defaultConvert = JsonFactory.root().getConvert();
-        source.init(conf);
-
-
-        /*
-        source.lock("lockx", 5000);
-        */
-
-
-        source.keysStartsWith("more-hot").forEach(x -> {
-            System.out.println(x);
-            source.del(x);
-
-            int i = (short) 3;
-        });
-
-        //--------------------- set ------------------------------
-        /*
-         */
-
-        /*
-
-
-
-
-
-
-        Collection<String> setx1 = source.getCollection("setx", String.class);
-
-        System.out.println(setx1);
-
-
-        //source.getexLong()
-
-        source.setHms("hmx", Map.of("a", "5", "b", "51", "c", "ads"));
-
-        List<Serializable> hmget = source.hmget("hmx", int.class, "a");
-
-        System.out.println(hmget);
-
-        Integer hm = source.getHm("hmx", int.class, "ads");
-        System.out.println(hm);
-
-        Map<String, String> hms = source.getHms("hmx", "a", "b");
-        System.out.println("hmx:" + hms);
-
-        *//*System.out.println("======================================================");
-        System.out.println(source.incrHm("hmx", "a", -6.0));
-        hms = source.getHms("hmx", "a", "b");
-        System.out.println("hmx：a+1后的结果 " + hms);*//*
-        System.out.println("======================================================");
-        source.setHm("hmx", "c", 12);
-        hms = source.getHms("hmx", "a", "b", "c", "d", "a");
-        System.out.println("hmx：设置 c=12 后的结果 " + hms);
-        System.out.println("======================================================");
-        Double c = source.getHm("hmx", double.class, "c");
-        System.out.println("hmx 中 c 值：" + c);*/
-
-        /*Map<String, Object> hmx = source.getHmall("hmx");
-        System.out.println("Hmall：" + hmx);*/
-
-
-
-
-        /*AnyValue.DefaultAnyValue conf = new AnyValue.DefaultAnyValue();
+    static {
+        AnyValue.DefaultAnyValue conf = new AnyValue.DefaultAnyValue();
         conf.addValue("node", new AnyValue.DefaultAnyValue().addValue("addr", "47.111.150.118").addValue("port", "6064").addValue("password", "*Zhong9307!").addValue("db", 2));
 
         source.defaultConvert = JsonFactory.root().getConvert();
         source.initValueType(String.class); //value用String类型
-        source.init(conf);*/
+        source.init(conf);
     }
 
     public static void main(String[] args) {
 
-
-        //source.setLong("a", 125);
-
-        /*long a = source.getLong("a", 0);
-        System.out.println(a);
-
-        List<String> keys = source.keys("farm*");
-        keys.forEach(x -> System.out.println(x));
-
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }*/
-
-
-        // ===========================================
         //System.out.println(source.remove("a", "b"));
 
         // bit
@@ -263,10 +115,10 @@ public class RedisTest {
         System.out.println(source.getCollectionSize("sk")); // 2*/
 
 
-        /*Map<String, String> hms = source.getHms("supportusers", "5-kfeu0f", "xxxx", "3-0kbt7u8t", "95q- ");
+        Map<String, String> hms = source.getHms("supportusers", "5-kfeu0f", "xxxx", "3-0kbt7u8t", "95q- ");
         hms.forEach((k, v) -> {
             System.out.println(k + " : " + v);
-        });*/
+        });
 
 
         /*MyRedisCacheSource<String> source2 = new MyRedisCacheSource();

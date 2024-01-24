@@ -1,27 +1,299 @@
 package org.redkalex.cache.redis;
 
-import org.redkale.annotation.AutoLoad;
-import org.redkale.annotation.ResourceType;
+
+import org.redkale.convert.Convert;
 import org.redkale.service.Local;
 import org.redkale.source.CacheSource;
-import org.redkale.util.AnyValue;
+import org.redkale.util.AutoLoad;
+import org.redkale.util.ResourceType;
 
 import java.io.Serializable;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 @Local
 @AutoLoad(false)
 @ResourceType(CacheSource.class)
-public class MyRedisCacheSource extends RedisCacheSource {
-
-    @Override
-    public void init(AnyValue conf) {
-        super.init(conf);
+public class MyRedisCacheSource<V extends Object> extends RedisCacheSource<V> {
+    //--------------------- oth ------------------------------
+    public boolean setnx(String key, Object v) {
+        byte[][] bytes = Stream.of(key, v).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Serializable rs = send("SETNX", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        return rs == null ? false : (long) rs == 1;
     }
-/*
-//--------------------- zset ------------------------------
+    //--------------------- oth ------------------------------
+
+    //--------------------- bit ------------------------------
+    public boolean getBit(String key, int offset) {
+        byte[][] bytes = Stream.of(key, offset).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Serializable v = send("GETBIT", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        return v == null ? false : (long) v == 1;
+    }
+
+    public void setBit(String key, int offset, boolean bool) {
+        byte[][] bytes = Stream.of(key, offset, bool ? 1 : 0).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("SETBIT", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
+
+    //--------------------- bit ------------------------------
+    //--------------------- lock ------------------------------
+    // 尝试加锁，成功返回0，否则返回上一锁剩余毫秒值
+    public int tryLock(String key, int millis) {
+        byte[][] bytes = Stream.of("" +
+                "if (redis.call('exists',KEYS[1]) == 0) then " +
+                "redis.call('psetex', KEYS[1], ARGV[1], 1) " +
+                "return 0; " +
+                "else " +
+                "return redis.call('PTTL', KEYS[1]); " +
+                "end; ", 1, key, millis).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        int n = (int) send("EVAL", CacheEntryType.OBJECT, (Type) null, null, bytes).join();
+        return n;
+    }
+
+    // 加锁
+    public void lock(String key, int millis) {
+        int i;
+        do {
+            i = tryLock(key, millis);
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        } while (i > 0);
+    }
+
+    // 解锁
+    public void unlock(String key) {
+        remove(key);
+    }
+
+
+    //--------------------- key ------------------------------
+
+    public long getTtl(String key) {
+        return (long) send("TTL", CacheEntryType.OBJECT, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).join();
+    }
+
+    public long getPttl(String key) {
+        return (long) send("PTTL", CacheEntryType.OBJECT, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).join();
+    }
+
+    public int remove(String... keys) {
+        if (keys == null || keys.length == 0) {
+            return 0;
+        }
+        List<String> para = new ArrayList<>();
+        para.add("" +
+                "    local args = ARGV;" +
+                "    local x = 0;" +
+                "    for i,v in ipairs(args) do" +
+                "        local inx = redis.call('del', v);" +
+                "        if(inx > 0) then" +
+                "             x = x + 1;" +
+                "        end" +
+                "    end" +
+                "    return x;");
+
+        para.add("0");
+        for (Object field : keys) {
+            para.add(String.valueOf(field));
+        }
+        byte[][] bytes = para.stream().map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        return (int) send("EVAL", CacheEntryType.OBJECT, (Type) null, null, bytes).join();
+    }
+
+    //--------------------- hmget ------------------------------
+    public <T extends Object> V getHm(String key, T field) {
+        // return (V) send("HMGET", CacheEntryType.OBJECT, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), field.getBytes(StandardCharsets.UTF_8)).join();
+        Map<Object, V> map = getHms(key, field);
+        return map.get(field);
+    }
+
+    public <T extends Object> Map<T, V> getHms(String key, T... field) {
+        if (field == null || field.length == 0) {
+            return new HashMap<>();
+        }
+        byte[][] bytes = Stream.concat(Stream.of(key), Stream.of(field)).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Map<T, V> result = new HashMap<>();
+
+        List<V> vs = (List) send("HMGET", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        for (int i = 0; i < field.length; i++) { // /*vs != null && vs.size() > i &&*/
+            if (vs.get(i) == null) {
+                continue;
+            }
+            result.put(field[i], vs.get(i));
+        }
+
+        return result;
+    }
+
+    public Map<String, V> getHmall(String key) {
+        List<V> vs = (List) send("HGETALL", CacheEntryType.OBJECT, (Type) null, key, key.getBytes(StandardCharsets.UTF_8)).join();
+        Map<String, V> result = new HashMap<>(vs.size() / 2);
+        for (int i = 0; i < vs.size(); i += 2) {
+            result.put(String.valueOf(vs.get(i)), vs.get(i + 1));
+        }
+
+        return result;
+    }
+
+    //--------------------- hmset、hmdel、incr ------------------------------
+    public <T> void setHm(String key, T field, V value) {
+        byte[][] bytes = Stream.of(key, field, value).map(x -> x.toString().getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("HMSET", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
+
+    public <T> void setHms(String key, Map<T, V> kv) {
+        List<String> args = new ArrayList();
+        args.add(key);
+
+        kv.forEach((k, v) -> {
+            args.add(String.valueOf(k));
+            args.add(String.valueOf(v));
+        });
+
+        byte[][] bytes = args.stream().map(x -> x.getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("HMSET", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
+
+    public <T> Long incrHm(String key, T field, long n) {
+        byte[][] bytes = Stream.of(key, String.valueOf(field), String.valueOf(n)).map(x -> x.getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        return (Long) send("HINCRBY", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
+
+    public <T> Double incrHm(String key, T field, double n) {
+        byte[][] bytes = Stream.of(key, String.valueOf(field), String.valueOf(n)).map(x -> x.getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Serializable v = send("HINCRBYFLOAT", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        if (v == null) {
+            return null;
+        }
+        return Double.parseDouble(String.valueOf(v));
+    }
+
+    public <T> void hdel(String key, T... field) {
+        byte[][] bytes = Stream.concat(Stream.of(key), Stream.of(field)).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("HDEL", null, (Type) null, key, bytes).join();
+    }
+
+    public <T> List<T> zexists(String key, T... fields) {
+        if (fields == null || fields.length == 0) {
+            return new ArrayList<>();
+        }
+        List<String> para = new ArrayList<>();
+        para.add("" +
+                "   local key = KEYS[1];" +
+                "    local args = ARGV;" +
+                "    local result = {};" +
+                "    for i,v in ipairs(args) do" +
+                "        local inx = redis.call('ZREVRANK', key, v);" +
+                "        if(inx) then" +
+                "             table.insert(result,1,v);" +
+                "        end" +
+                "    end" +
+                "    return result;");
+        para.add("1");
+        para.add(key);
+        for (Object field : fields) {
+            para.add(String.valueOf(field));
+        }
+        byte[][] bytes = para.stream().map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        return (List<T>) send("EVAL", CacheEntryType.OBJECT, (Type) null, null, bytes).join();
+    }
+
+    //--------------------- set ------------------------------
+    public <T> T srandomItem(String key) {
+        byte[][] bytes = Stream.of(key, 1).map(x -> formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, x)).toArray(byte[][]::new);
+        List<T> list = (List) send("SRANDMEMBER", null, (Type) null, key, bytes).join();
+        return list != null && !list.isEmpty() ? list.get(0) : null;
+    }
+
+    public <T> List<T> srandomItems(String key, int n) {
+        byte[][] bytes = Stream.of(key, n).map(x -> formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, x)).toArray(byte[][]::new);
+        return (List) send("SRANDMEMBER", null, (Type) null, key, bytes).join();
+    }
+
+    //--------------------- list ------------------------------
+    public CompletableFuture<Void> appendListItemsAsync(String key, V... values) {
+        byte[][] bytes = Stream.concat(Stream.of(key), Stream.of(values)).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        return (CompletableFuture) send("RPUSH", null, (Type) null, key, bytes);
+    }
+
+    public CompletableFuture<Void> lpushListItemAsync(String key, V value) {
+        return (CompletableFuture) send("LPUSH", null, (Type) null, key, key.getBytes(StandardCharsets.UTF_8), formatValue(CacheEntryType.OBJECT, (Convert) null, (Type) null, value));
+    }
+
+    public void lpushListItem(String key, V value) {
+        lpushListItemAsync(key, value).join();
+    }
+
+    public void appendListItems(String key, V... values) {
+        appendListItemsAsync(key, values).join();
+    }
+
+    public void appendSetItems(String key, V... values) {
+        // todo:
+        for (V v : values) {
+            appendSetItem(key, v);
+        }
+    }
+
+    // 1  2  3 4  5  6  7  8  9  10  11  12  13  14  15
+    public CompletableFuture<Collection<V>> getCollectionAsync(String key, int offset, int limit) {
+        return (CompletableFuture) send("OBJECT", null, (Type) null, key, "ENCODING".getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8)).thenCompose(t -> {
+            if (t == null) return CompletableFuture.completedFuture(null);
+            if (new String((byte[]) t).contains("list")) { //list
+                return send("LRANGE", CacheEntryType.OBJECT, (Type) null, false, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(offset).getBytes(StandardCharsets.UTF_8), String.valueOf(offset + limit - 1).getBytes(StandardCharsets.UTF_8));
+            } else {
+                return send("SMEMBERS", CacheEntryType.OBJECT, (Type) null, true, key, key.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+    }
+
+    public Collection<V> getCollection(String key, int offset, int limit) {
+        return getCollectionAsync(key, offset, limit).join();
+    }
+
+    public V brpop(String key, int seconds) {
+        byte[][] bytes = Stream.concat(Stream.of(key), Stream.of(seconds)).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        return (V) send("BRPOP", null, (Type) null, key, bytes).join();
+    }
+
+    //--------------------- zset ------------------------------
+    public <N extends Number> void zadd(String key, Map<V, N> kv) {
+        if (kv == null || kv.isEmpty()) {
+            return;
+        }
+        List<String> args = new ArrayList();
+        args.add(key);
+
+        kv.forEach((k, v) -> {
+            args.add(String.valueOf(v));
+            args.add(String.valueOf(k));
+        });
+
+        byte[][] bytes = args.stream().map(x -> x.getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("ZADD", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
+
+    public <N extends Number> double zincr(String key, Object number, N n) {
+        byte[][] bytes = Stream.of(key, n, number).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        Serializable v = send("ZINCRBY", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+        return Double.parseDouble(String.valueOf(v));
+    }
+
+    public void zrem(String key, V... vs) {
+        List<String> args = new ArrayList();
+        args.add(key);
+        for (V v : vs) {
+            args.add(String.valueOf(v));
+        }
+        byte[][] bytes = args.stream().map(x -> x.getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
+        send("ZREM", CacheEntryType.OBJECT, (Type) null, key, bytes).join();
+    }
 
     public int getZrank(String key, V v) {
         byte[][] bytes = Stream.of(key, v).map(x -> String.valueOf(x).getBytes(StandardCharsets.UTF_8)).toArray(byte[][]::new);
@@ -142,209 +414,17 @@ public class MyRedisCacheSource extends RedisCacheSource {
         }
         return map;
     }
-* */
 
-    // --------------------
-    /*
-    supper had support
-    public <N extends Number> void zadd(String key, Map<Serializable, N> kv) {
-        if (kv == null || kv.isEmpty()) {
-            return;
-        }
-        List<Serializable> args = new ArrayList();
-        kv.forEach((k, v) -> {
-            args.add(k);
-            args.add(v);
-        });
+    // ----------
+    protected byte[] formatValue(CacheEntryType cacheType, Convert convert0, Type resultType, Object value) {
+        if (value == null) return "null".getBytes(StandardCharsets.UTF_8);
+        if (convert0 == null) convert0 = convert;
+        if (cacheType == CacheEntryType.LONG || cacheType == CacheEntryType.ATOMIC)
+            return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        if (cacheType == CacheEntryType.STRING) return convert0.convertToBytes(String.class, value);
 
-        sendAsync(RedisCommand.ZADD, key, args.toArray(Serializable[]::new)).join();
+        if (value instanceof String) return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        if (value instanceof Number) return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        return convert0.convertToBytes(resultType == null ? objValueType : resultType, value);
     }
-
-    public <N extends Number> double zincr(String key, Serializable number, N n) {
-        return sendAsync(RedisCommand.ZINCRBY, key, number, n).thenApply(x -> x.getDoubleValue(0d)).join();
-    }
-
-    @Override
-    public long zrem(String key, String... vs) {
-        return sendAsync(RedisCommand.ZREM, key, keysArgs(key, vs)).thenApply(x -> x.getLongValue(0L)).join();
-    }*/
-
-    /*public <T> List<T> zexists(String key, T... fields) {
-        if (fields == null || fields.length == 0) {
-            return new ArrayList<>();
-        }
-        List<String> para = new ArrayList<>();
-        para.add("" +
-                "   local key = KEYS[1];" +
-                "    local args = ARGV;" +
-                "    local result = {};" +
-                "    for i,v in ipairs(args) do" +
-                "        local inx = redis.call('ZREVRANK', key, v);" +
-                "        if(inx) then" +
-                "             table.insert(result,1,v);" +
-                "        end" +
-                "    end" +
-                "    return result;");
-        para.add("1");
-        para.add(key);
-        for (Object field : fields) {
-            para.add(String.valueOf(field));
-        }
-
-        // todo:
-        //sendAsync("EVAL", null, para.toArray(Serializable[]::new)).thenApply(x -> x.).join();
-
-        return null;
-    }*/
-
-    //--------------------- bit ------------------------------
-    public boolean getBit(String key, int offset) {
-        return sendAsync(RedisCommand.GETBIT, key, key.getBytes(StandardCharsets.UTF_8), String.valueOf(offset).getBytes(StandardCharsets.UTF_8)).thenApply(v -> v.getIntValue(0) > 0).join();
-    }
-
-    public void setBit(String key, int offset, boolean bool) {
-        sendAsync(RedisCommand.SETBIT, key, keysArgs(key, offset + "", bool ? "1" : "0")).join();
-    }
-    //--------------------- bit ------------------------------
-
-    //--------------------- lock ------------------------------
-    // 尝试加锁，成功返回0，否则返回上一锁剩余毫秒值
-    public long tryLock(String key, int millis) {
-        String[] obj = {"" +
-                "if (redis.call('EXISTS',KEYS[1]) == 0) then " +
-                "redis.call('PSETEX',KEYS[1],ARGV[1],1); " +
-                "return 0; " +
-                "else " +
-                "return redis.call('PTTL',KEYS[1]); " +
-                "end;", 1 + "", key, millis + ""
-        };
-
-        return sendAsync(RedisCommand.EVAL, null, keysArgs(null, obj)).thenApply(v -> v.getIntValue(1)).join();
-    }
-
-    // 加锁
-    public void lock(String key, int millis) {
-        long i;
-        do {
-            i = tryLock(key, millis);
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        } while (i > 0);
-    }
-
-    // 解锁
-    public void unlock(String key) {
-        remove(key);
-    }
-
-    //--------------------- key ------------------------------
-
-    public String get(String key) {
-        return get(key, String.class);
-    }
-
-    public void set(String key, Serializable value) {
-        sendAsync(RedisCommand.SET, key, keysArgs(key, value + "")).join();
-    }
-
-    //--------------------- set ------------------------------
-    /*public <T> void sadd(String key, Collection<T> args) {
-        saddAsync(key, args.toArray(T[]::new)).join();
-    }*/
-
-    /*public void sadd(String key, Serializable... args) {
-        String[] arr = new String[args.length];
-        for (int i = 0; i < args.length; i++) {
-            arr[i] = args[i] + "";
-        }
-        saddAsync(key, arr).join();
-    }
-
-    public void srem(String key, String... args) {
-        sremAsync(key, args).join();
-    }
-
-    public CompletableFuture<RedisCacheResult> saddAsync(String key, Serializable... args) {
-        return sendAsync(RedisCommand.SADD, key, keysArgs(key, args));
-    }
-
-    public CompletableFuture<RedisCacheResult> sremAsync(String key, String... args) {
-        return sendAsync(RedisCommand.SREM, key, keysArgs(key, args));
-    }*/
-
-    //--------------------- hm ------------------------------
-
-    /*public Long incrHm(String key, String field, int value) {
-        return sendAsync("HINCRBY", key, field, value).thenApply(x -> x.getLongValue(0l)).join();
-    }
-
-    public Double incrHm(String key, String field, double value) {
-        return sendAsync("HINCRBYFLOAT", key, field, value).thenApply(x -> x.getDoubleValue(0d)).join();
-    }*/
-
-    public void setHm(String key, String field, Serializable value) {
-        setHmsAsync(key, Map.of(field, value)).join();
-    }
-
-    public void setHms(String key, Map kv) {
-        setHmsAsync(key, kv).join();
-    }
-
-    public CompletableFuture<RedisCacheResult> setHmsAsync(String key, Map<String, Serializable> kv) {
-        List<String> args = new ArrayList();
-        kv.forEach((k, v) -> {
-            args.add(k);
-            args.add(v + "");
-        });
-
-        return sendAsync(RedisCommand.HMSET, key, keysArgs(key, args.toArray(String[]::new)));
-    }
-
-    public String getHm(String key, String field) {
-        return getHm(key, String.class, field);
-    }
-
-    public <T extends Serializable> T getHm(String key, Class<T> type, String field) {
-        List<Serializable> list = super.hmget(key, type, field);
-        if (list == null && list.isEmpty()) {
-            return null;
-        }
-        return (T) list.get(0);
-    }
-
-    public Map<String, String> getHms(String key, String... field) {
-        return getHms(key, String.class, field);
-    }
-
-    public <T extends Serializable> Map<String, T> getHms(String key, Class<T> type, String... field) {
-        List<Serializable> list = super.hmget(key, type, field);
-        if (list == null && list.isEmpty()) {
-            return null;
-        }
-        Map<String, T> map = new HashMap<>(field.length);
-
-        for (int i = 0; i < field.length; i++) {
-            if (list.get(i) == null) {
-                continue;
-            }
-            map.put(field[i], (T) list.get(i));
-        }
-        return map;
-    }
-
-    /*public Map<String, Object> getHmall(String key) {
-        List<String> list = null;  // TODO:
-        Map<String, Object> map = new HashMap<>();
-        if (list.isEmpty()) {
-            return map;
-        }
-
-        for (int i = 0; i + 1 < list.size(); i += 2) {
-            map.put((String) list.get(i), list.get(i + 1));
-        }
-        return map;
-    }*/
 }
