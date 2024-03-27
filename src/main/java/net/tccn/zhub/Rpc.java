@@ -1,7 +1,6 @@
 package net.tccn.zhub;
 
 import org.redkale.convert.ConvertColumn;
-import org.redkale.convert.json.JsonConvert;
 import org.redkale.service.RetResult;
 
 public class Rpc<T> {
@@ -14,10 +13,10 @@ public class Rpc<T> {
     public Rpc() {
     }
 
-    protected Rpc(String appname, String ruk, String topic, Object value) {
+    protected Rpc(String appname, String ruk, String topic, T value) {
         this.ruk = appname + "::" + ruk;
         this.topic = topic;
-        this.value = (T) JsonConvert.root().convertTo(value);
+        this.value = value;
     }
 
     public String getRuk() {

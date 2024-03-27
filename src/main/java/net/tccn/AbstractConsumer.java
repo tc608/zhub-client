@@ -19,7 +19,7 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
 
     protected static String APP_NAME = "";
 
-    private Map<String, EventType> eventMap = new ConcurrentHashMap<>();
+    protected Map<String, EventType<?>> eventMap = new ConcurrentHashMap<>();
 
     protected abstract String getGroupid();
 
@@ -31,6 +31,7 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
         return Set.of("-");
     }
 
+    // topic 消息消费前处理
     protected void accept(String topic, String value) {
         EventType eventType = eventMap.get(topic);
 
@@ -42,6 +43,12 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
         }
 
         eventType.accept(data);
+    }
+
+    // rpc 被调用端
+    protected <T> void rpcAccept(String topic, T value) {
+        EventType eventType = eventMap.get(topic);
+        eventType.accept(value);
     }
 
     protected final void removeEventType(String topic) {
@@ -76,5 +83,14 @@ public abstract class AbstractConsumer extends ZhubAgentProvider implements ICon
     @Override
     public String resourceName() {
         return super.getName();
+    }
+
+    protected String toStr(Object v) {
+        if (v instanceof String) {
+            return (String) v;
+        } else if (v == null) {
+            return null;
+        }
+        return convert.convertTo(v);
     }
 }
