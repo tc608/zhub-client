@@ -423,11 +423,9 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
                 timerMap.forEach((name, timer) -> {
                     send("timer", name);
                 });
-                if (retry > 0) {
-                    logger.warning(String.format("ZHubClient[%s][%s] %s Succeed！", getGroupid(), i + 1, retry > 0 ? "reconnection" : "init"));
-                } else {
-                    logger.fine(String.format("ZHubClient[%s] %s Succeed！", getGroupid(), retry > 0 ? "reconnection" : "init"));
-                }
+                logger.log(retry > 0 ? Level.WARNING : Level.FINE,
+                        String.format("ZHubClient[%s]%s [%s] Succeed!", getGroupid(), retry > 0 ? "[" + (i + 1) + "]" : "", retry > 0 ? "reconnection" : "init"));
+
                 return true;
             } catch (Exception e) {
                 if (i == 0) {
