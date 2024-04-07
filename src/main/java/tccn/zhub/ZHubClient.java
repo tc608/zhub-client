@@ -1,6 +1,8 @@
 package tccn.zhub;
 
 import com.google.gson.reflect.TypeToken;
+import jakarta.annotation.PostConstruct;
+import lombok.Setter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tccn.AbstractConsumer;
@@ -9,7 +11,6 @@ import tccn.IConsumer;
 import tccn.IProducer;
 import tccn.timer.Timers;
 
-import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -34,15 +35,16 @@ import java.util.logging.Logger;
 public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
+    @Setter
     @Value("${zhub.addr}")
     private String addr = "127.0.0.1:1216";
-
+    @Setter
     @Value("${zhub.groupid}")
     private String groupid = "";
-
+    @Setter
     @Value("${zhub.auth}")
     private String auth = "";
-
+    @Setter
     @Value("${zhub.appid}")
     protected String appid = "";
 
@@ -69,6 +71,9 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
     /*private static boolean isFirst = true;
     private boolean isMain = false;*/
     private static final Map<String, ZHubClient> mainHub = new HashMap<>(); // 127.0.0.1:1216 - ZHubClient
+
+    public ZHubClient() {
+    }
 
     public ZHubClient(String addr, String groupid, String appid, String auth) {
         this.addr = addr;
