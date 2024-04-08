@@ -2,6 +2,8 @@ package net.tccn.zhub;
 
 import org.redkale.convert.ConvertColumn;
 import org.redkale.service.RetResult;
+import org.redkale.util.TypeToken;
+import org.redkale.util.Utility;
 
 public class Rpc<T> {
     private String ruk;     // request unique key:
@@ -10,11 +12,13 @@ public class Rpc<T> {
 
     private RpcResult rpcResult;
 
+    private TypeToken typeToken;
+
     public Rpc() {
     }
 
-    protected Rpc(String appname, String ruk, String topic, T value) {
-        this.ruk = appname + "::" + ruk;
+    protected Rpc(String appname, String topic, T value) {
+        this.ruk = appname + "::" + Utility.uuid();
         this.topic = topic;
         this.value = value;
     }
@@ -50,6 +54,16 @@ public class Rpc<T> {
 
     public void setRpcResult(RpcResult rpcResult) {
         this.rpcResult = rpcResult;
+    }
+
+    @ConvertColumn(ignore = true)
+    public TypeToken getTypeToken() {
+        return typeToken;
+    }
+
+    @ConvertColumn(ignore = true)
+    public void setTypeToken(TypeToken typeToken) {
+        this.typeToken = typeToken;
     }
 
     @ConvertColumn(ignore = true)

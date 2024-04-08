@@ -34,7 +34,7 @@ public class RpcResult<R> {
         return result;
     }
 
-    public void setResult(R result) {
-        this.result = result;
+    public void setResult(Object result) {
+        this.result = (R) result;
     }
 }
