@@ -24,7 +24,7 @@ public class TimerExecutor {
         for (Task t : task) {
             t.setTimerExecutor(this);
             queue.push(t);
-            logger.finest("add new task : " + t.getName());
+            // logger.finest("add new task : " + t.getName());
         }
     }
 

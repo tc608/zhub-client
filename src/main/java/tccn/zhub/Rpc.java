@@ -2,7 +2,14 @@ package tccn.zhub;
 
 import com.google.gson.Gson;
 import com.google.gson.annotations.Expose;
+import com.google.gson.reflect.TypeToken;
+import lombok.Getter;
+import lombok.Setter;
 
+import java.util.UUID;
+
+@Getter
+@Setter
 public class Rpc<T> {
     /*public final static Gson gson = new GsonBuilder()
             .excludeFieldsWithoutExposeAnnotation()
@@ -16,46 +23,16 @@ public class Rpc<T> {
     @Expose(deserialize = false, serialize = false)
     private RpcResult rpcResult;
 
-    public Rpc() {
-    }
+    @Expose(deserialize = false, serialize = false)
+    private TypeToken typeToken;
 
-    public Rpc(String appname, String ruk, String topic, Object value) {
-        this.ruk = appname + "::" + ruk;
+    /*public Rpc() {
+    }*/
+
+    protected Rpc(String appname, String topic, T value) {
+        this.ruk = appname + "::" + UUID.randomUUID().toString().replaceAll("-", "");
         this.topic = topic;
-        this.value = (T) gson.toJson(value);
-    }
-
-    public String getRuk() {
-        return ruk;
-    }
-
-    public void setRuk(String ruk) {
-        this.ruk = ruk;
-    }
-
-    public String getTopic() {
-        return topic;
-    }
-
-    public void setTopic(String topic) {
-        this.topic = topic;
-    }
-
-    public T getValue() {
-        return value;
-    }
-
-    public void setValue(T value) {
         this.value = value;
-    }
-
-
-    public RpcResult getRpcResult() {
-        return rpcResult;
-    }
-
-    public void setRpcResult(RpcResult rpcResult) {
-        this.rpcResult = rpcResult;
     }
 
     public String getBackTopic() {

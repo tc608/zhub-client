@@ -93,10 +93,10 @@ public class TimerTask implements Task {
         if (!isComplete) {
             int count = execCount.incrementAndGet(); // 执行次数+1
 
-            long start = System.currentTimeMillis();
+            // long start = System.currentTimeMillis();
             job.execute(this);
-            long end = System.currentTimeMillis();
-            logger.finest(String.format("task [%s] : not complete -> %s, time: %s ms, exec count: %s.", getName(), isComplete ? "had complete" : "not complete", end - start, count));
+            // long end = System.currentTimeMillis();
+            // logger.finest(String.format("task [%s] : not complete -> %s, time: %s ms, exec count: %s.", getName(), isComplete ? "had complete" : "not complete", end - start, count));
 
             if (!isComplete) {
                 timerExecutor.add(this, true);

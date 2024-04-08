@@ -6,7 +6,7 @@
 
     <groupId>net.tccn</groupId>
     <artifactId>zhub-client-spring</artifactId>
-    <version>17.0.0408.dev</version>
+    <version>17.0.0409.dev</version>
 
     <parent>
         <groupId>org.springframework.boot</groupId>

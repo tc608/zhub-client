@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -18,7 +19,7 @@ public abstract class AbstractConsumer implements IConsumer {
 
     public Gson gson = Rpc.gson;
 
-    private Map<String, EventType> eventMap = new HashMap<>();
+    protected Map<String, EventType<?>> eventMap = new ConcurrentHashMap<>();
 
     protected abstract String getGroupid();
 
@@ -36,6 +37,7 @@ public abstract class AbstractConsumer implements IConsumer {
         return set;
     }
 
+    // topic 消息消费前处理
     protected void accept(String topic, String value) {
         EventType eventType = eventMap.get(topic);
 
@@ -47,6 +49,19 @@ public abstract class AbstractConsumer implements IConsumer {
         }
 
         eventType.accept(data);
+    }
+
+    // rpc 被调用端
+    protected <T> void rpcAccept(String topic, T value) {
+        EventType eventType = eventMap.get(topic);
+
+        /*// eventType 与 T 的类型比较、
+        if (!eventType.typeToken.getType().getTypeName().equals(value.getClass().getTypeName())) {
+            eventType.accept(toStr(value));
+        } else {
+            eventType.accept(value);
+        }*/
+        eventType.accept(value);
     }
 
     protected final void removeEventType(String topic) {
@@ -74,6 +89,15 @@ public abstract class AbstractConsumer implements IConsumer {
             eventMap.put(topic, EventType.of(topic, typeToken, consumer));
             subscribe(topic);
         }
+    }
+
+    protected String toStr(Object v) {
+        if (v instanceof String) {
+            return (String) v;
+        } else if (v == null) {
+            return null;
+        }
+        return gson.toJson(v);
     }
 
 }

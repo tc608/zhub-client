@@ -15,9 +15,8 @@ public class Event<V> {
         this.value = value;
     }
 
-    public static <V> Event of(String topic, V value) {
-        return new Event<V>(topic, value);
+    public static <V> Event<V> of(String topic, V value) {
+        return new Event<>(topic, value);
     }
-
 
 }
