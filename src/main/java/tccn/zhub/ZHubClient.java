@@ -638,7 +638,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             TypeToken typeToken = rpc.getTypeToken();
             if (typeToken.getType() != ((RpcResult<?>) value).getResult().getClass()) {
                 Object result = gson.fromJson(toStr(((RpcResult<?>) value).getResult()), typeToken.getType());
-                ((RpcResult<?>) value).setResult(result);
+                ((RpcResult<Object>) value).setResult(result);
             }
 
             rpc.setRpcResult((RpcResult) value);
