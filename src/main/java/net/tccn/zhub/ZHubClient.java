@@ -679,7 +679,7 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             TypeToken typeToken = rpc.getTypeToken();
             if (typeToken.getType() != ((RpcResult<?>) value).getResult().getClass()) {
                 Object result = convert.convertFrom(typeToken.getType(), toStr(((RpcResult<?>) value).getResult()));
-                ((RpcResult<?>) value).setResult(result);
+                ((RpcResult<Object>) value).setResult(result);
             }
 
             rpc.setRpcResult((RpcResult) value);
@@ -725,7 +725,8 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
             Rpc<T> rpc = null;
             try {
                 if (v instanceof String) {
-                    rpc = convert.convertFrom(IType.STRING.getType(), (String) v);
+                    rpc = convert.convertFrom(new TypeToken<Rpc<String>>() {
+                    }.getType(), (String) v);
                 } else {
                     rpc = (Rpc<T>) v;
                 }
