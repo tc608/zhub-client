@@ -1,4 +1,4 @@
-package tccn;
+package dev.zhub;
 
 import com.google.gson.reflect.TypeToken;
 

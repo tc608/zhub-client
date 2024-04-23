@@ -1,4 +1,4 @@
-package tccn;
+package dev.zhub;
 
 /**
  * 发布订阅 事件

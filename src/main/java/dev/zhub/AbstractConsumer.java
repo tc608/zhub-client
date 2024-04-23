@@ -1,10 +1,9 @@
-package tccn;
+package dev.zhub;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import tccn.zhub.Rpc;
+import dev.zhub.client.Rpc;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;

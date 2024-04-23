@@ -1,6 +1,6 @@
-package tccn.timer.queue;
+package dev.zhub.timer.queue;
 
-import tccn.timer.task.Task;
+import dev.zhub.timer.task.Task;
 
 import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;

@@ -1,6 +1,6 @@
-package tccn.timer;
+package dev.zhub.timer;
 
-import tccn.timer.scheduled.ScheduledCycle;
+import dev.zhub.timer.scheduled.ScheduledCycle;
 
 import java.util.UUID;
 import java.util.function.Supplier;

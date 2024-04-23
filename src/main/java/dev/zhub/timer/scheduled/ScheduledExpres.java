@@ -1,4 +1,4 @@
-package tccn.timer.scheduled;
+package dev.zhub.timer.scheduled;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;

@@ -1,7 +1,7 @@
-package tccn.timer.task;
+package dev.zhub.timer.task;
 
-import tccn.timer.TimerExecutor;
-import tccn.timer.scheduled.Scheduled;
+import dev.zhub.timer.TimerExecutor;
+import dev.zhub.timer.scheduled.Scheduled;
 
 /**
  * @author: liangxianyou at 2018/8/5 19:32.

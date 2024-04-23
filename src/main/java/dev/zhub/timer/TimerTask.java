@@ -1,8 +1,8 @@
-package tccn.timer;
+package dev.zhub.timer;
 
-import tccn.timer.scheduled.Scheduled;
-import tccn.timer.task.Job;
-import tccn.timer.task.Task;
+import dev.zhub.timer.scheduled.Scheduled;
+import dev.zhub.timer.task.Job;
+import dev.zhub.timer.task.Task;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;

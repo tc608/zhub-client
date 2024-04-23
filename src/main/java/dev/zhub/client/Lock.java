@@ -1,4 +1,4 @@
-package tccn.zhub;
+package dev.zhub.client;
 
 // ================================================== lock ==================================================
 public class Lock {

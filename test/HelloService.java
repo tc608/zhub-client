@@ -1,8 +1,8 @@
 import org.junit.Before;
 import org.junit.Test;
-import tccn.IType;
-import tccn.zhub.Lock;
-import tccn.zhub.ZHubClient;
+import net.tccn.IType;
+import net.tccn.zhub.Lock;
+import net.tccn.zhub.ZHubClient;
 
 // @RestService(automapping = true)
 public class HelloService {
