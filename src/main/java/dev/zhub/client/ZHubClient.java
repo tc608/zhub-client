@@ -2,12 +2,12 @@ package dev.zhub.client;
 
 import com.google.gson.reflect.TypeToken;
 import dev.zhub.*;
-import jakarta.annotation.PostConstruct;
+import dev.zhub.timer.Timers;
 import lombok.Setter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import dev.zhub.timer.Timers;
 
+import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
