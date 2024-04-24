@@ -6,7 +6,7 @@
 
     <groupId>dev.zhub</groupId>
     <artifactId>zhub-client-redkale</artifactId>
-    <version>x.1.1.dev</version>
+    <version>0.1.1.dev</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
