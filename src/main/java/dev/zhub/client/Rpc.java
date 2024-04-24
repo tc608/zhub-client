@@ -1,4 +1,4 @@
-package net.tccn.zhub;
+package dev.zhub.client;
 
 import org.redkale.convert.ConvertColumn;
 import org.redkale.service.RetResult;

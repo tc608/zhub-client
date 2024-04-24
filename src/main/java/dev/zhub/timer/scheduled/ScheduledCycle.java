@@ -1,4 +1,4 @@
-package net.tccn.timer.scheduled;
+package dev.zhub.timer.scheduled;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;

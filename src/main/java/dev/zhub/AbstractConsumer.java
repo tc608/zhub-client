@@ -1,4 +1,4 @@
-package net.tccn;
+package dev.zhub;
 
 import org.redkale.convert.json.JsonConvert;
 import org.redkale.util.Resourcable;

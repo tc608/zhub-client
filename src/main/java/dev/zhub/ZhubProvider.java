@@ -1,6 +1,6 @@
-package net.tccn;
+package dev.zhub;
 
-import net.tccn.zhub.ZHubClient;
+import dev.zhub.client.ZHubClient;
 import org.redkale.annotation.Priority;
 import org.redkale.cluster.ClusterAgent;
 import org.redkale.cluster.ClusterAgentProvider;

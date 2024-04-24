@@ -1,7 +1,7 @@
-package net.tccn.zhub;
+package dev.zhub.client;
 
-import net.tccn.*;
-import net.tccn.timer.Timers;
+import dev.zhub.*;
+import dev.zhub.timer.Timers;
 import org.redkale.annotation.AutoLoad;
 import org.redkale.annotation.ResourceType;
 import org.redkale.service.Local;

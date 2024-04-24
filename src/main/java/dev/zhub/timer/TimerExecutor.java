@@ -1,7 +1,7 @@
-package net.tccn.timer;
+package dev.zhub.timer;
 
-import net.tccn.timer.queue.TimerQueue;
-import net.tccn.timer.task.Task;
+import dev.zhub.timer.queue.TimerQueue;
+import dev.zhub.timer.task.Task;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

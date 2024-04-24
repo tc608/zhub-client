@@ -27,15 +27,15 @@ public class HelloService implements Service {
     @Resource(name = "vvvvhub2")
     private ZHubClient zhub2;*/
 
-    //private net.tccn.zhub.ZHubClient zhubx = null;
+    //private dev.zhub.client.ZHubClient zhubx = null;
 
 
     @Override
     public void init(AnyValue config) {
 
         /*CompletableFuture.runAsync(() -> {
-            zhubx = new net.tccn.zhub.ZHubClient("127.0.0.1", 1216, "g-dev", "DEV-LOCAL");
-            //zhubx = new net.tccn.zhub.ZHubClient("47.111.150.118", 6066, "g-dev", "DEV-LOCAL");
+            zhubx = new dev.zhub.client.ZHubClient("127.0.0.1", 1216, "g-dev", "DEV-LOCAL");
+            //zhubx = new dev.zhub.client.ZHubClient("47.111.150.118", 6066, "g-dev", "DEV-LOCAL");
         });*/
 
         // Function<Rpc<T>, RpcResult<R>> fun
