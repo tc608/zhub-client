@@ -4,10 +4,7 @@ import com.google.gson.reflect.TypeToken;
 import dev.zhub.*;
 import dev.zhub.timer.Timers;
 import lombok.Setter;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -22,24 +19,18 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-@Component
 public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer {
 
     public Logger logger = Logger.getLogger(ZHubClient.class.getSimpleName());
     @Setter
-    @Value("${zhub.addr}")
     private String addr = "127.0.0.1:1216";
     @Setter
-    @Value("${zhub.groupid}")
     private String groupid = "";
     @Setter
-    @Value("${zhub.auth}")
     private String auth = "";
     @Setter
-    @Value("${zhub.appid}")
     protected String appid = "";
 
-    @PostConstruct
     public void init() {
         init(null);
     }

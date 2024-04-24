@@ -5,15 +5,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>dev.zhub</groupId>
-    <artifactId>zhub-client-spring</artifactId>
-    <version>8.0.0424.dev</version>
+    <artifactId>zhub-client</artifactId>
+    <version>0.1.0424.dev</version>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.5.4</version>
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
+    <description>ZHub-Java 通用客户端</description>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -22,25 +17,20 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
+            <version>2.10.1</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <!--<version>4.13.1</version>-->
+            <version>4.13.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <!--<version>1.18.30</version>-->
+            <version>1.18.30</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
