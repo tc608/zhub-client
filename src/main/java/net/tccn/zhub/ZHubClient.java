@@ -75,12 +75,11 @@ public class ZHubClient extends AbstractConsumer implements IConsumer, IProducer
         }
 
         CompletableFuture.runAsync(() -> {
+            if (!initSocket(0)) {
+                return;
+            }
             // 消息 事件接收
             new Thread(() -> {
-                if (!initSocket(0)) {
-                    return;
-                }
-
                 while (true) {
                     try {
                         String readLine = reader.readLine();
